@@ -1,0 +1,4 @@
+* text=auto eol=lf
+*.pmx binary
+*.vmd binary
+*.png binary
