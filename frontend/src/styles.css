@@ -1,0 +1,122 @@
+:root {
+  --bg: #f4f5f7;
+  --panel: #ffffff;
+  --border: #d8dce1;
+  --text: #1f2328;
+  --muted: #6e7781;
+  --accent: #2f6feb;
+  --accent-text: #ffffff;
+  --error: #cf222e;
+  --tl-bg: #ffffff;
+  --tl-alt: #f6f7f9;
+  --tl-line: #e1e4e8;
+  --tl-text: #24292f;
+  --tl-muted: #8c959f;
+  --tl-key: #2f6feb;
+  --tl-morph: #bf3989;
+  --tl-cursor: #e5534b;
+  color-scheme: light;
+  font-family: system-ui, -apple-system, 'Segoe UI', 'Hiragino Sans', 'Yu Gothic UI', 'Noto Sans JP', sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+}
+
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; height: 100%; }
+
+.app {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ---- Sidebar (操作領域) ---- */
+.sidebar {
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  overflow-y: auto;
+}
+.app-title { font-size: 15px; margin: 0 0 6px; display: flex; align-items: center; gap: 6px; }
+.badge { font-size: 10px; font-weight: 500; color: var(--muted); border: 1px solid var(--border); border-radius: 8px; padding: 1px 6px; }
+.sidebar section { display: flex; flex-direction: column; gap: 6px; padding: 8px 0; border-top: 1px solid var(--border); }
+.sidebar h2 { font-size: 11px; font-weight: 600; color: var(--muted); margin: 0; letter-spacing: 0.05em; }
+
+button {
+  font: inherit;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 6px;
+  cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: 0.5; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+
+.field { display: flex; flex-direction: column; gap: 3px; color: var(--muted); }
+.field select { font: inherit; padding: 4px; }
+.check { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+
+.info { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; margin: 2px 0 0; font-size: 12px; }
+.info dt { color: var(--muted); }
+.info dd { margin: 0; word-break: break-all; }
+.info details { color: var(--muted); }
+.info ul { margin: 2px 0; padding-left: 16px; max-height: 120px; overflow: auto; }
+
+.status { min-height: 20px; }
+.busy { color: var(--accent); }
+.error { color: var(--error); white-space: pre-wrap; }
+.sidebar-footer { margin-top: auto; font-size: 11px; color: var(--muted); }
+
+/* ---- Main: モデル表示領域 + タイムライン領域 ---- */
+.main {
+  display: grid;
+  grid-template-rows: 1fr 240px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.viewport { position: relative; min-height: 0; }
+.viewport-canvas { position: absolute; inset: 0; }
+.viewport-canvas canvas { display: block; }
+.viewport.drag-over::after {
+  content: 'ここにドロップ';
+  position: absolute; inset: 8px;
+  border: 2px dashed var(--accent);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--accent); font-size: 16px;
+  background: rgba(47, 111, 235, 0.06);
+  pointer-events: none;
+}
+.viewport-hint {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  color: var(--muted); background: rgba(255, 255, 255, 0.85);
+  padding: 10px 14px; border-radius: 8px; pointer-events: none; text-align: center; max-width: 80%;
+}
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  min-height: 0;
+}
+.timeline-controls { display: flex; align-items: center; gap: 4px; padding: 6px 8px; flex-wrap: wrap; }
+.timeline-controls button { padding: 3px 8px; }
+.timeline-controls .play { min-width: 74px; }
+.frame-input { width: 64px; font: inherit; padding: 3px 6px; text-align: right; border: 1px solid var(--border); border-radius: 4px; }
+.frame-total { color: var(--muted); margin-right: 4px; }
+.spacer { flex: 1; }
+.muted { color: var(--muted); }
+.frame-slider { margin: 0 8px 4px; }
+.timeline-canvas { position: relative; flex: 1; min-height: 0; overflow: hidden; border-top: 1px solid var(--border); }
+.timeline-canvas canvas { position: absolute; inset: 0; cursor: crosshair; }
+.timeline-empty { position: absolute; left: 160px; top: 40px; color: var(--muted); pointer-events: none; }

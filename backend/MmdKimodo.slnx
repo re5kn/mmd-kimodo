@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MmdKimodo.Api/MmdKimodo.Api.csproj" />
+    <Project Path="src/MmdKimodo.Core/MmdKimodo.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MmdKimodo.Tests/MmdKimodo.Tests.csproj" />
+  </Folder>
+</Solution>

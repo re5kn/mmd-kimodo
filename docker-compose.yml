@@ -1,0 +1,9 @@
+services:
+  app:
+    build: .
+    image: mmd-kimodo:dev
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      - Storage__MaxUploads=8
+    restart: unless-stopped
