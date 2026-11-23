@@ -6,14 +6,14 @@ import { Sidebar } from './components/Sidebar';
 import { Timeline } from './components/Timeline';
 import { Viewport } from './components/Viewport';
 import { filesFromDrop, filesFromInput, isMotionFile } from './files';
-import { clipAt, newClipId, timelineEnd, type MotionClip } from './mmd/clips';
+import { clipAt, emptyMotion, newClipId, timelineEnd, type MotionClip } from './mmd/clips';
 import { bindMotion, type BoundMotion } from './mmd/motion';
 import type { MmdViewer, ViewerOptions } from './viewer/MmdViewer';
 
 const FPS = 30;
 
-/** normal: model / motion loading etc. edit: the left panel is dedicated to the motion editor. */
-type Mode = { kind: 'normal' } | { kind: 'edit'; clipId: string };
+/** normal: model / motion loading etc. edit / create: the left panel is dedicated to the motion editor. */
+type Mode = { kind: 'normal' } | { kind: 'edit'; clipId: string } | { kind: 'create'; draft: MotionClip };
 
 export default function App() {
   const viewerRef = useRef<MmdViewer | null>(null);
@@ -36,13 +36,18 @@ export default function App() {
     return m;
   }, [model, clips]);
   const selectedClip = clips.find((c) => c.id === selectedClipId) ?? null;
-  const activeClip = mode.kind === 'edit' ? clips.find((c) => c.id === mode.clipId) ?? null : null;
-  const maxFrame = timelineEnd(clips);
+  const activeClip = mode.kind === 'edit' ? clips.find((c) => c.id === mode.clipId) ?? null : mode.kind === 'create' ? mode.draft : null;
+  const maxFrame = Math.max(timelineEnd(clips), mode.kind === 'create' ? mode.draft.start : 0);
 
   // The clip under the current frame drives the pose (overlaps: the last added wins; blending comes later).
   const playingClip = clipAt(clips, frame);
   const playingBound = playingClip ? bounds.get(playingClip.id) ?? null : null;
   const localFrame = playingClip ? frame - playingClip.start : 0;
+  const createBlockedReason = !model
+    ? 'モデルを読み込んでください'
+    : playingClip
+      ? `フレーム ${frame} には既にモーションがあります`
+      : null;
 
   const onReady = useCallback((v: MmdViewer | null) => {
     viewerRef.current = v;
@@ -104,7 +109,24 @@ export default function App() {
     setMode({ kind: 'edit', clipId: selectedClip.id });
   };
 
-  const closeEditor = () => setMode({ kind: 'normal' });
+  const startCreate = () => {
+    if (createBlockedReason || !model) return;
+    setPlaying(false);
+    setSelectedClipId(null);
+    setMode({ kind: 'create', draft: { id: newClipId(), name: '新規モーション', start: frame, motion: emptyMotion(model.name) } });
+  };
+
+  const closeEditor = () => {
+    if (mode.kind === 'create') {
+      const d = mode.draft;
+      // Only keep the new motion once it has key frames (adding keys is not implemented yet).
+      if (d.motion.boneFrameCount + d.motion.morphFrameCount > 0) {
+        setClips((cs) => [...cs, d]);
+        setSelectedClipId(d.id);
+      }
+    }
+    setMode({ kind: 'normal' });
+  };
 
   const deleteSelectedClip = () => {
     if (!selectedClipId) return;
@@ -179,7 +201,7 @@ export default function App() {
   return (
     <div className="app">
       {mode.kind !== 'normal' && activeClip ? (
-        <MotionEditorPanel clip={activeClip} frame={frame} onClose={closeEditor} />
+        <MotionEditorPanel kind={mode.kind} clip={activeClip} frame={frame} onClose={closeEditor} />
       ) : (
         <Sidebar
           model={model}
@@ -187,6 +209,7 @@ export default function App() {
           clipCount={clips.length}
           selectedClip={selectedClip}
           selectedBound={selectedClip ? bounds.get(selectedClip.id) ?? null : null}
+          createBlockedReason={createBlockedReason}
           options={options}
           busy={busy}
           error={error}
@@ -200,6 +223,7 @@ export default function App() {
           }}
           onDeleteClip={deleteSelectedClip}
           onEditClip={startEdit}
+          onCreateMotion={startCreate}
           onOptions={(o) => setOptions((prev) => ({ ...prev, ...o }))}
           onResetCamera={() => viewerRef.current?.resetCamera()}
         />

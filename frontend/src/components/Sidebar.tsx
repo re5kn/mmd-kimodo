@@ -11,6 +11,8 @@ interface Props {
   /** Clip selected on the timeline's motion layer. */
   selectedClip: MotionClip | null;
   selectedBound: BoundMotion | null;
+  /** Why "モーション作成" is unavailable, or null when it can be used. */
+  createBlockedReason: string | null;
   options: ViewerOptions;
   busy: string | null;
   error: string | null;
@@ -20,6 +22,7 @@ interface Props {
   onSelectPmx: (path: string) => void;
   onDeleteClip: () => void;
   onEditClip: () => void;
+  onCreateMotion: () => void;
   onOptions: (opts: Partial<ViewerOptions>) => void;
   onResetCamera: () => void;
 }
@@ -114,6 +117,14 @@ export function Sidebar(p: Props) {
         <button onClick={p.onEditClip} disabled={!!p.busy || !p.selectedClip} title="タイムラインで選択中のモーションを編集">
           モーション編集
         </button>
+        <button
+          onClick={p.onCreateMotion}
+          disabled={!!p.busy || !!p.createBlockedReason}
+          title={p.createBlockedReason ?? '現在のフレームから新しいモーションを作成'}
+        >
+          モーション作成
+        </button>
+        {p.createBlockedReason && <p className="hint">作成: {p.createBlockedReason}</p>}
         {!p.selectedClip && (
           <p className="hint">
             {p.clipCount === 0

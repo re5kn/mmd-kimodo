@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { ModelDto, MotionDto } from '../../api/types';
+import { emptyMotion } from '../../mmd/clips';
 import { buildRows } from '../Timeline';
 
 const model = {
@@ -8,12 +9,8 @@ const model = {
 } as unknown as ModelDto;
 
 const motion: MotionDto = {
-  fileName: '',
-  modelName: 'm',
+  ...emptyMotion('m'),
   maxFrame: 10,
-  boneFrameCount: 3,
-  morphFrameCount: 1,
-  ik: [],
   bones: [
     { name: '右足', frames: [{ f: 0, p: [0, 0, 0], r: [0, 0, 0, 1], i: [] }, { f: 10, p: [0, 0, 0], r: [0, 0, 0, 1], i: [] }] },
     { name: '謎ボーン', frames: [{ f: 5, p: [0, 0, 0], r: [0, 0, 0, 1], i: [] }] },
@@ -40,5 +37,11 @@ describe('buildRows', () => {
     expect(rows.map((r) => r.label)).toEqual(['全体', 'センター', '右足', '左足', '謎ボーン', 'あ', 'まばたき']);
     expect(rows[1].frames).toEqual([]);
     expect(rows[5].frames).toEqual([3]);
+  });
+
+  test('empty draft motion for creating still lists model bones', () => {
+    const rows = buildRows(model, emptyMotion('m'), { offset: 20, includeEmpty: true });
+    expect(rows.map((r) => r.label)).toEqual(['全体', 'センター', '右足', '左足', 'あ', 'まばたき']);
+    expect(rows.every((r) => r.frames.length === 0)).toBe(true);
   });
 });

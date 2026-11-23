@@ -62,7 +62,7 @@ export function buildRows(model: ModelDto | null, motion: MotionDto | null, opts
   return rows;
 }
 
-export type TimelineMode = 'normal' | 'edit';
+export type TimelineMode = 'normal' | 'edit' | 'create';
 
 interface Props {
   model: ModelDto | null;
@@ -70,7 +70,7 @@ interface Props {
   clips: MotionClip[];
   selectedClipId: string | null;
   mode: TimelineMode;
-  /** Clip being edited; its key frames are listed below the motion layer. */
+  /** Clip being edited / draft being created; its key frames are listed below the motion layer. */
   activeClip: MotionClip | null;
   frame: number;
   maxFrame: number;
@@ -191,7 +191,7 @@ export function Timeline(p: Props) {
         <label className="check">
           <input type="checkbox" checked={loop} onChange={(e) => onLoopChange(e.target.checked)} /> ループ
         </label>
-        {mode === 'edit' && <span className="mode-chip">モーション編集中</span>}
+        {mode !== 'normal' && <span className="mode-chip">{mode === 'edit' ? 'モーション編集中' : 'モーション作成中'}</span>}
         <span className="spacer" />
         <span className="muted">30 fps</span>
         <button title="縮小" onClick={() => setPxPerFrame((v) => Math.max(1, v / 1.5))}>－</button>
@@ -293,7 +293,7 @@ function draw(ctx: CanvasRenderingContext2D, a: DrawArgs) {
   const fx = (f: number) => x0 + (f - scrollX) * ppf + ppf / 2;
   const lastFrame = scrollX + (w - x0) / ppf;
 
-  // Key frame rows (edit mode)
+  // Key frame rows (edit / create mode)
   const visible = Math.ceil((h - ROWS_Y) / ROW_H);
   for (let r = 0; r < visible; r++) {
     const ri = r + scrollY;
@@ -341,19 +341,21 @@ function draw(ctx: CanvasRenderingContext2D, a: DrawArgs) {
   ctx.beginPath();
   ctx.rect(x0, RULER_H, w - x0, LAYER_H);
   ctx.clip();
-  const drawClip = (clip: MotionClip, style: 'normal' | 'selected' | 'dim') => {
+  const drawClip = (clip: MotionClip, style: 'normal' | 'selected' | 'dim' | 'draft') => {
     const left = fx(clip.start) - ppf / 2;
     const right = fx(clipEnd(clip)) + ppf / 2;
     if (right < x0 || left > w) return;
     const y = RULER_H + 3;
     const hh = LAYER_H - 6;
     ctx.globalAlpha = style === 'dim' ? 0.4 : 1;
-    ctx.fillStyle = style === 'selected' ? clipSelFill : clipFill;
+    ctx.fillStyle = style === 'selected' ? clipSelFill : style === 'draft' ? bg : clipFill;
     roundRect(ctx, left + 0.5, y + 0.5, Math.max(right - left - 1, 2), hh - 1, 4);
     ctx.fill();
     ctx.strokeStyle = clipBorder;
     ctx.lineWidth = style === 'selected' ? 2 : 1;
+    if (style === 'draft') ctx.setLineDash([4, 3]);
     ctx.stroke();
+    ctx.setLineDash([]);
     ctx.lineWidth = 1;
     ctx.save();
     ctx.beginPath();
@@ -375,6 +377,7 @@ function draw(ctx: CanvasRenderingContext2D, a: DrawArgs) {
   // Draw the highlighted clip last so it stays on top of overlapping clips.
   const top = mode === 'normal' ? clips.find((cl) => cl.id === selectedClipId) : clips.find((cl) => cl.id === activeClip?.id);
   if (top) drawClip(top, 'selected');
+  if (mode === 'create' && activeClip) drawClip(activeClip, 'draft');
   ctx.restore();
 
   ctx.strokeStyle = line;

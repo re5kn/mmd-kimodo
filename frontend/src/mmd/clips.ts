@@ -52,6 +52,11 @@ export function clipBoundaries(clips: readonly MotionClip[]): number[] {
   return [...s].sort((a, b) => a - b);
 }
 
+/** An empty motion used as the draft while creating a new motion. */
+export function emptyMotion(modelName: string): MotionDto {
+  return { fileName: '', modelName, maxFrame: 0, boneFrameCount: 0, morphFrameCount: 0, bones: [], morphs: [], ik: [] };
+}
+
 let nextId = 1;
 export function newClipId(): string {
   return `clip-${nextId++}`;
