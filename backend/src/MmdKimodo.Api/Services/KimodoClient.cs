@@ -131,6 +131,8 @@ public sealed class KimodoClient
 /// <summary>status: unconfigured | unreachable | loading | ready | error.</summary>
 public sealed record KimodoStatus(string Status, string? Model, string? Error)
 {
+    /// <summary>Whether Japanese prompts can be translated (Claude API key configured).</summary>
+    public bool Translation { get; init; }
     public bool Ready => Status == "ready";
     public double MinDuration => KimodoClient.MinDuration;
     public double MaxDuration => KimodoClient.MaxDuration;

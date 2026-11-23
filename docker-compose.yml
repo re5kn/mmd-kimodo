@@ -8,6 +8,9 @@ services:
       - Storage__MaxUploads=8
       # Kimodo generation server (re5kn/kimodopmx: docker compose up -d generator)
       - Kimodo__Url=${KIMODO_URL:-http://host.docker.internal:9560}
+      # Japanese prompt translation with the Claude API (put the key in .env, never commit it)
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - Translation__Model=${TRANSLATION_MODEL:-claude-opus-5-5}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
