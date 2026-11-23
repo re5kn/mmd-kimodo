@@ -24,6 +24,8 @@ builder.Services.AddResponseCompression(o =>
 builder.Services.Configure<BrotliCompressionProviderOptions>(o => o.Level = System.IO.Compression.CompressionLevel.Fastest);
 builder.Services.Configure<GzipCompressionProviderOptions>(o => o.Level = System.IO.Compression.CompressionLevel.Fastest);
 builder.Services.AddSingleton<UploadStore>();
+builder.Services.AddHttpClient<KimodoClient>();
+builder.Services.AddSingleton<PromptTranslator>();
 builder.Services.AddProblemDetails();
 
 var app = builder.Build();
@@ -101,6 +103,57 @@ api.MapPost("/motions", async (HttpRequest request, CancellationToken ct) =>
     }
 }).DisableAntiforgery();
 
+// Kimodo motion generation (text -> VMD for the loaded model).
+api.MapGet("/kimodo/status", async (KimodoClient kimodo, PromptTranslator translator, CancellationToken ct) =>
+{
+    var status = await kimodo.GetStatusAsync(ct);
+    return status with { Translation = translator.Available };
+});
+
+// Japanese (or rough English) description -> English Kimodo prompt, via the Claude API.
+api.MapPost("/kimodo/translate", async (TranslateRequest req, PromptTranslator translator, CancellationToken ct) =>
+{
+    var invalid = PromptTranslator.Validate(req.Text);
+    if (invalid is not null) return Results.BadRequest(new { error = invalid });
+    try
+    {
+        return Results.Ok(new { prompt = await translator.TranslateAsync(req.Text!, ct), model = translator.Model });
+    }
+    catch (KimodoException e)
+    {
+        return Results.Json(new { error = e.Message }, statusCode: (int)e.Status);
+    }
+});
+
+api.MapPost("/kimodo/generate", async (GenerateRequest req, UploadStore store, KimodoClient kimodo, CancellationToken ct) =>
+{
+    var invalid = KimodoClient.Validate(req.Prompt, req.Duration);
+    if (invalid is not null) return Results.BadRequest(new { error = invalid });
+    var upload = store.Get(req.UploadId);
+    var pmxPath = upload is null ? null : store.GetFilePath(upload, req.PmxPath);
+    if (pmxPath is null || !pmxPath.EndsWith(".pmx", StringComparison.OrdinalIgnoreCase))
+        return Results.NotFound(new { error = "モデルが見つかりません。読み込み直してください" });
+
+    try
+    {
+        var vmd = await kimodo.GenerateAsync(req.Prompt!, req.Duration, pmxPath, ct);
+        using var ms = new MemoryStream(vmd);
+        var motion = VmdReader.Read(ms);
+        // Kimodo keys every frame; drop the keys linear interpolation reproduces.
+        var reduce = VmdKeyReducer.Preset(req.Reduce);
+        if (reduce is not null) motion = VmdKeyReducer.Reduce(motion, reduce);
+        return Results.Ok(DtoMapper.ToDto(motion, "kimodo.vmd"));
+    }
+    catch (KimodoException e)
+    {
+        return Results.Json(new { error = e.Message }, statusCode: (int)e.Status);
+    }
+    catch (Exception e) when (e is InvalidDataException or EndOfStreamException)
+    {
+        return Results.Json(new { error = $"Kimodo の出力を読めません: {e.Message}" }, statusCode: StatusCodes.Status502BadGateway);
+    }
+});
+
 // Unknown API routes are 404 (not the SPA page).
 api.MapFallback(() => Results.NotFound(new { error = "not found" }));
 
@@ -136,3 +189,8 @@ static IResult LoadModel(UploadStore store, UploadStore.Upload upload, string? r
         return Results.BadRequest(new { error = $"PMX parse error: {e.Message}", uploadId = upload.Id });
     }
 }
+
+/// <param name="Reduce">Key thinning: none | low | normal (default) | high.</param>
+record TranslateRequest(string? Text);
+
+record GenerateRequest(string UploadId, string PmxPath, string? Prompt, double Duration, string? Reduce = null);

@@ -1,16 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { loadModelFromUpload, uploadModel, uploadMotion, type UploadFile } from './api/client';
-import type { ModelDto } from './api/types';
+import type { ModelDto, MotionDto } from './api/types';
 import { MotionEditorPanel } from './components/MotionEditorPanel';
 import { Sidebar } from './components/Sidebar';
 import { Timeline } from './components/Timeline';
 import { Viewport } from './components/Viewport';
 import { filesFromDrop, filesFromInput, isMotionFile } from './files';
-import { clipAt, emptyMotion, newClipId, timelineEnd, type MotionClip } from './mmd/clips';
+import { clipAt, clipContains, clipEnd, emptyMotion, newClipId, timelineEnd, type MotionClip } from './mmd/clips';
 import { bindMotion, type BoundMotion } from './mmd/motion';
+import { spliceMotion } from './mmd/splice';
 import type { MmdViewer, ViewerOptions } from './viewer/MmdViewer';
 
 const FPS = 30;
+const NEW_MOTION_NAME = '新規モーション';
+
+/** Clip name for a generated motion: the prompt, shortened. */
+function clipNameFromPrompt(prompt: string): string {
+  const p = prompt.trim().replace(/\s+/g, ' ').replace(/\.$/, '');
+  return p.length > 40 ? `${p.slice(0, 39)}…` : p;
+}
 
 /** normal: model / motion loading etc. edit / create: the left panel is dedicated to the motion editor. */
 type Mode = { kind: 'normal' } | { kind: 'edit'; clipId: string } | { kind: 'create'; draft: MotionClip };
@@ -38,13 +46,17 @@ export default function App() {
     if (model) for (const c of clips) m.set(c.id, bindMotion(model, c.motion));
     return m;
   }, [model, clips]);
+  // The motion being created is not on the layer yet but plays like a clip once it has keys (e.g. generated).
+  const draft = mode.kind === 'create' ? mode.draft : null;
+  const draftBound = useMemo(() => (model && draft ? bindMotion(model, draft.motion) : null), [model, draft]);
   const selectedClip = clips.find((c) => c.id === selectedClipId) ?? null;
   const activeClip = mode.kind === 'edit' ? clips.find((c) => c.id === mode.clipId) ?? null : mode.kind === 'create' ? mode.draft : null;
-  const maxFrame = Math.max(timelineEnd(clips), mode.kind === 'create' ? mode.draft.start : 0);
+  const maxFrame = Math.max(timelineEnd(clips), draft ? clipEnd(draft) : 0);
 
   // The clip under the current frame drives the pose (overlaps: the last added wins; blending comes later).
-  const playingClip = clipAt(clips, frame);
-  const playingBound = playingClip ? bounds.get(playingClip.id) ?? null : null;
+  const draftPlaying = draft && draftBound && draft.motion.boneFrameCount + draft.motion.morphFrameCount > 0 && clipContains(draft, frame);
+  const playingClip = draftPlaying ? draft : clipAt(clips, frame);
+  const playingBound = draftPlaying ? draftBound : playingClip ? bounds.get(playingClip.id) ?? null : null;
   const localFrame = playingClip ? frame - playingClip.start : 0;
   const createBlockedReason = !model
     ? 'モデルを読み込んでください'
@@ -116,13 +128,26 @@ export default function App() {
     if (createBlockedReason || !model) return;
     setPlaying(false);
     setSelectedClipId(null);
-    setMode({ kind: 'create', draft: { id: newClipId(), name: '新規モーション', start: frame, motion: emptyMotion(model.name) } });
+    setMode({ kind: 'create', draft: { id: newClipId(), name: NEW_MOTION_NAME, start: frame, motion: emptyMotion(model.name) } });
+  };
+
+  // A Kimodo motion was generated in the editor: put it into the clip at motion frame `at`.
+  const onGenerated = (generated: MotionDto, prompt: string, at: number) => {
+    setPlaying(false);
+    if (mode.kind === 'create') {
+      const d = mode.draft;
+      const name = d.name === NEW_MOTION_NAME ? clipNameFromPrompt(prompt) : d.name;
+      setMode({ kind: 'create', draft: { ...d, name, motion: spliceMotion(d.motion, generated, at) } });
+    } else if (mode.kind === 'edit') {
+      const id = mode.clipId;
+      setClips((cs) => cs.map((c) => (c.id === id ? { ...c, motion: spliceMotion(c.motion, generated, at) } : c)));
+    }
   };
 
   const closeEditor = () => {
     if (mode.kind === 'create') {
       const d = mode.draft;
-      // Only keep the new motion once it has key frames (adding keys is not implemented yet).
+      // Only keep the new motion once it has key frames (e.g. generated with Kimodo).
       if (d.motion.boneFrameCount + d.motion.morphFrameCount > 0) {
         setClips((cs) => [...cs, d]);
         setSelectedClipId(d.id);
@@ -203,8 +228,15 @@ export default function App() {
 
   return (
     <div className="app">
-      {mode.kind !== 'normal' && activeClip ? (
-        <MotionEditorPanel kind={mode.kind} clip={activeClip} frame={frame} onClose={closeEditor} />
+      {mode.kind !== 'normal' && activeClip && model ? (
+        <MotionEditorPanel
+          kind={mode.kind}
+          clip={activeClip}
+          frame={frame}
+          model={model}
+          onGenerated={onGenerated}
+          onClose={closeEditor}
+        />
       ) : (
         <Sidebar
           model={model}

@@ -136,3 +136,14 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 .editor-badge { color: var(--accent); border-color: var(--accent); }
 .editor-actions { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid var(--border); }
 .mode-chip { font-size: 11px; color: var(--accent); border: 1px solid var(--accent); border-radius: 10px; padding: 1px 8px; }
+
+/* Kimodo generation (motion editor) */
+.kimodo-status { display: flex; align-items: center; gap: 6px; font-size: 12px; flex-wrap: wrap; }
+.kimodo-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+.kimodo-dot.ready { background: #2e9d4f; }
+.kimodo-dot.loading { background: #d79b00; }
+.kimodo-dot.error, .kimodo-dot.unreachable { background: var(--error); }
+button.link { border: none; background: none; padding: 0 2px; color: var(--accent); font-size: 11px; margin-left: auto; }
+.prompt-input { font: inherit; padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px; resize: vertical; color: var(--text, inherit); }
+.duration-row { display: flex; align-items: center; gap: 8px; }
+.duration-input { width: 72px; font: inherit; padding: 3px 6px; text-align: right; border: 1px solid var(--border); border-radius: 4px; }

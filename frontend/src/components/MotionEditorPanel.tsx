@@ -1,4 +1,6 @@
+import type { ModelDto, MotionDto } from '../api/types';
 import { clipEnd, clipLength, type MotionClip } from '../mmd/clips';
+import { GenerateSection } from './GenerateSection';
 
 export type EditorKind = 'edit' | 'create';
 
@@ -6,6 +8,9 @@ interface Props {
   kind: EditorKind;
   clip: MotionClip;
   frame: number;
+  model: ModelDto;
+  /** A Kimodo motion was generated; it starts at motion frame `at` of the clip. */
+  onGenerated: (motion: MotionDto, prompt: string, at: number) => void;
   onClose: () => void;
 }
 
@@ -14,11 +19,12 @@ interface Props {
  * this layout; the model / motion loading buttons are hidden while it is shown.
  * Changing positions and rotations is not implemented yet.
  */
-export function MotionEditorPanel({ kind, clip, frame, onClose }: Props) {
+export function MotionEditorPanel({ kind, clip, frame, model, onGenerated, onClose }: Props) {
   const title = kind === 'edit' ? 'モーション編集' : 'モーション作成';
   const local = frame - clip.start;
   const inside = frame >= clip.start && (kind === 'create' || frame <= clipEnd(clip));
   const mo = clip.motion;
+  const hasKeys = mo.boneFrameCount + mo.morphFrameCount > 0;
 
   return (
     <aside className="sidebar editor" aria-label={title}>
@@ -41,6 +47,14 @@ export function MotionEditorPanel({ kind, clip, frame, onClose }: Props) {
         </dl>
       </section>
 
+      <GenerateSection
+        model={model}
+        at={local >= 0 ? local : null}
+        blockedReason={local < 0 ? 'モーションの開始フレームより前です' : null}
+        replacing={hasKeys && local <= mo.maxFrame}
+        onGenerated={onGenerated}
+      />
+
       <section>
         <h2>キーフレーム</h2>
         <p className="hint">位置・回転の変更は今後追加予定です。タイムラインでキーフレームを確認できます。</p>
@@ -50,7 +64,7 @@ export function MotionEditorPanel({ kind, clip, frame, onClose }: Props) {
         <button className="primary" onClick={onClose} title="Esc">
           {kind === 'edit' ? '編集を終了' : '作成を終了'}
         </button>
-        {kind === 'create' && mo.boneFrameCount + mo.morphFrameCount === 0 && (
+        {kind === 'create' && !hasKeys && (
           <p className="hint">キーフレームがないまま終了すると、作成中のモーションは破棄されます。</p>
         )}
       </div>

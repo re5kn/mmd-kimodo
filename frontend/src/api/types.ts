@@ -191,3 +191,15 @@ export const MaterialFlags = {
   DoubleSided: 0x01,
   Edge: 0x10,
 } as const;
+
+/** Kimodo generation server state: unconfigured | unreachable | loading | ready | error. */
+export interface KimodoStatusDto {
+  status: string;
+  model: string | null;
+  error: string | null;
+  ready: boolean;
+  /** Japanese prompts can be translated (Claude API key configured). */
+  translation: boolean;
+  minDuration: number;
+  maxDuration: number;
+}
