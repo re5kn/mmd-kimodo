@@ -15,12 +15,12 @@ public class PmxReaderTests
 
         Assert.Equal(2.0f, m.Version);
         Assert.Equal("サンプル", m.Name);
-        Assert.Equal(384, m.Vertices.Length);
-        Assert.Equal(192 * 3, m.Indices.Length);
+        Assert.Equal(456, m.Vertices.Length);
+        Assert.Equal(228 * 3, m.Indices.Length);
         Assert.Equal(["tex\\checker.png"], m.Textures);
-        Assert.Equal(3, m.Materials.Length);
+        Assert.Equal(4, m.Materials.Length);
         Assert.Equal(m.Indices.Length, m.Materials.Sum(x => x.IndexCount));
-        Assert.Equal(20, m.Bones.Length);
+        Assert.Equal(23, m.Bones.Length);
         Assert.Equal(2, m.Morphs.Length);
 
         var center = m.Bones.Single(b => b.Name == "センター");
@@ -40,6 +40,48 @@ public class PmxReaderTests
         Assert.NotEmpty(m.Morphs[0].VertexOffsets);
         Assert.Equal(PmxMorphType.Group, m.Morphs[1].Type);
         Assert.Equal(new PmxGroupMorphOffset(0, 0.5f), m.Morphs[1].GroupOffsets.Single());
+
+        Assert.Equal(5, m.RigidBodies.Length);
+        var head = m.RigidBodies[0];
+        Assert.Equal("頭", head.Name);
+        Assert.Equal("頭", m.Bones[head.Bone].Name);
+        Assert.Equal(PmxRigidBodyShape.Sphere, head.Shape);
+        Assert.Equal(PmxRigidBodyMode.Static, head.Mode);
+        Assert.Equal(0xFFFF, head.CollisionMask);
+        var hair = m.RigidBodies[2];
+        Assert.Equal("髪1", m.Bones[hair.Bone].Name);
+        Assert.Equal(PmxRigidBodyShape.Capsule, hair.Shape);
+        Assert.Equal(PmxRigidBodyMode.Dynamic, hair.Mode);
+        Assert.Equal(1, hair.Group);
+        Assert.Equal(0x0001, hair.CollisionMask);
+        Assert.Equal(0.35f, hair.Size.X);
+        Assert.Equal(0.5f, hair.LinearDamping);
+
+        Assert.Equal(3, m.Joints.Length);
+        var j = m.Joints[0];
+        Assert.Equal(0, j.Type);
+        Assert.Equal((0, 2), (j.RigidBodyA, j.RigidBodyB));
+        Assert.Equal(new Vector3(0, 18.2f, 1.4f), j.Position);
+        Assert.Equal(-40 * MathF.PI / 180, j.AngularLowerLimit.X, 5);
+        Assert.Equal(new Vector3(20, 20, 20), j.SpringAngular);
+    }
+
+    [Fact]
+    public void ReadsRigidBodiesAndJointsWithWideIndices()
+    {
+        var bytes = MinimalPmx(utf8: true, indexSize: 4, withPhysics: true);
+        var m = PmxReader.Read(new MemoryStream(bytes));
+
+        Assert.Equal(2, m.RigidBodies.Length);
+        Assert.Equal("rb1", m.RigidBodies[1].Name);
+        Assert.Equal(1, m.RigidBodies[1].Bone);
+        Assert.Equal(PmxRigidBodyShape.Box, m.RigidBodies[1].Shape);
+        Assert.Equal(PmxRigidBodyMode.DynamicBoneAligned, m.RigidBodies[1].Mode);
+        Assert.Equal(new Vector3(0.1f, 0.2f, 0.3f), m.RigidBodies[1].Rotation);
+        var j = m.Joints.Single();
+        Assert.Equal((0, 1), (j.RigidBodyA, j.RigidBodyB));
+        Assert.Equal(new Vector3(1, 2, 3), j.LinearUpperLimit);
+        Assert.Equal(new Vector3(7, 8, 9), j.SpringAngular);
     }
 
     [Fact]
@@ -80,7 +122,7 @@ public class PmxReaderTests
     }
 
     /// <summary>Hand-built PMX with UTF-8 text and 4-byte indices.</summary>
-    private static byte[] MinimalPmx(bool utf8, int indexSize)
+    private static byte[] MinimalPmx(bool utf8, int indexSize, bool withPhysics = false)
     {
         var enc = utf8 ? Encoding.UTF8 : Encoding.Unicode;
         using var ms = new MemoryStream();
@@ -134,6 +176,23 @@ public class PmxReaderTests
         Text("child"); Text(""); V3(0, 1, 0); Idx(0); w.Write(0); w.Write((ushort)(0x0002 | 0x0100 | 0x0001)); Idx(-1);
         Idx(0); w.Write(0.5f);
         w.Write(0); // morphs
+        if (withPhysics)
+        {
+            w.Write(1); // display frames
+            Text("frame"); Text(""); w.Write((byte)0); w.Write(2);
+            w.Write((byte)0); Idx(1); // bone
+            w.Write((byte)1); Idx(0); // morph
+            w.Write(2); // rigid bodies
+            for (int i = 0; i < 2; i++)
+            {
+                Text($"rb{i}"); Text(""); Idx(i); w.Write((byte)i); w.Write((ushort)0xFFFE); w.Write((byte)i);
+                V3(1, 1, 1); V3(0, i, 0); V3(0.1f * i, 0.2f * i, 0.3f * i);
+                w.Write(1f); w.Write(0.5f); w.Write(0.5f); w.Write(0f); w.Write(0.5f); w.Write((byte)(i == 0 ? 0 : 2));
+            }
+            w.Write(1); // joints
+            Text("j"); Text(""); w.Write((byte)0); Idx(0); Idx(1); V3(0, 1, 0); V3(0, 0, 0);
+            V3(-1, -2, -3); V3(1, 2, 3); V3(-0.5f, 0, 0); V3(0.5f, 0, 0); V3(4, 5, 6); V3(7, 8, 9);
+        }
         return ms.ToArray();
     }
 }

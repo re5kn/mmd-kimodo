@@ -77,6 +77,11 @@ for (const [side, sx, en] of [['左', 1, 'left'], ['右', -1, 'right']]) {
     ] },
   });
 }
+// Ponytail (physics): three bones hanging from the back of the head (+Z is the back).
+const HAIR = [[0, 18.2, 1.4], [0, 16.6, 1.6], [0, 15.0, 1.75], [0, 13.4, 1.85]];
+bone('髪1', 'hair1', HAIR[0], '頭');
+bone('髪2', 'hair2', HAIR[1], '髪1');
+bone('髪3', 'hair3', HAIR[2], '髪2');
 const B = (n) => bones.findIndex((b) => b.name === n);
 
 // Boxes (three.js-style right-handed, CCW) built from PMX positions, then
@@ -116,6 +121,7 @@ function addBox(boneIdx, center, size, matIndex) {
 materials.push({ name: '肌', nameEn: 'skin', color: [1, 0.86, 0.78, 1], tex: -1, count: 0 });
 materials.push({ name: '服', nameEn: 'cloth', color: [1, 1, 1, 1], tex: 0, count: 0 });
 materials.push({ name: '靴', nameEn: 'shoes', color: [0.25, 0.25, 0.3, 1], tex: -1, count: 0 });
+materials.push({ name: '髪', nameEn: 'hair', color: [0.35, 0.22, 0.15, 1], tex: -1, count: 0 });
 
 // Material 0: skin (head, hands); 1: cloth (torso, arms, legs); 2: shoes.
 // Faces must be grouped by material, so add per material.
@@ -135,6 +141,31 @@ for (const [side, sx] of [['左', 1], ['右', -1]]) {
 for (const [side, sx] of [['左', 1], ['右', -1]]) {
   addBox(B(`${side}足首`), [1 * sx, 0.5, -0.4], [1.1, 1.0, 2.0], 2);
 }
+for (let k = 0; k < 3; k++) {
+  const [a, b] = [HAIR[k], HAIR[k + 1]];
+  addBox(B(`髪${k + 1}`), [0, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2], [0.7, a[1] - b[1], 0.7], 3);
+}
+
+// Rigid bodies (PMX coordinates). Head and upper body follow their bones;
+// the hair segments are simulated and collide only with group 0.
+const rigidBodies = [
+  { name: '頭', nameEn: 'head', bone: B('頭'), group: 0, mask: 0xffff, shape: 0, size: [1.4, 0, 0], pos: [0, 17.4, 0], rot: [0, 0, 0], mass: 1, mode: 0 },
+  { name: '上半身', nameEn: 'upper body', bone: B('上半身'), group: 0, mask: 0xffff, shape: 1, size: [1.6, 2.5, 0.9], pos: [0, 12.7, 0], rot: [0, 0, 0], mass: 1, mode: 0 },
+];
+for (let k = 0; k < 3; k++) {
+  const [a, b] = [HAIR[k], HAIR[k + 1]];
+  const dy = a[1] - b[1], dz = a[2] - b[2];
+  rigidBodies.push({
+    name: `髪${k + 1}`, nameEn: `hair${k + 1}`, bone: B(`髪${k + 1}`), group: 1, mask: 0x0001, shape: 2,
+    size: [0.35, Math.hypot(dy, dz) - 0.7, 0], pos: [0, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2],
+    // Tilt the capsule's Y axis along the segment (rotation about X).
+    rot: [Math.atan2(-dz, dy), 0, 0], mass: 1, mode: 1,
+  });
+}
+const joints = [0, 1, 2].map((k) => ({
+  name: `髪${k + 1}`, nameEn: `hair${k + 1}`, a: k === 0 ? 0 : k + 1, b: k + 2, pos: HAIR[k], rot: [0, 0, 0],
+  angLo: [-40 * D, -20 * D, -20 * D], angHi: [40 * D, 20 * D, 20 * D], springAng: [20, 20, 20],
+}));
 
 // Vertex morph "あ": stretch the lower half of the head down (mouth open).
 const morphOffsets = [];
@@ -186,8 +217,17 @@ function writePmx() {
   w.text('あ').text('a').u8(3).u8(1).i32(morphOffsets.length);
   for (const [i, o] of morphOffsets) w.u16(i).f32(...o);
   w.text('あ半分').text('a half').u8(3).u8(0).i32(1).i8(0).f32(0.5);
-  // display frames, rigid bodies, joints: none
-  w.i32(0).i32(0).i32(0);
+  w.i32(0); // display frames
+  w.i32(rigidBodies.length);
+  for (const r of rigidBodies) {
+    w.text(r.name).text(r.nameEn).i8(r.bone).u8(r.group).u16(r.mask).u8(r.shape);
+    w.f32(...r.size, ...r.pos, ...r.rot).f32(r.mass, 0.5, 0.5, 0, 0.5).u8(r.mode);
+  }
+  w.i32(joints.length);
+  for (const j of joints) {
+    w.text(j.name).text(j.nameEn).u8(0).i8(j.a).i8(j.b).f32(...j.pos, ...j.rot);
+    w.f32(0, 0, 0, 0, 0, 0).f32(...j.angLo, ...j.angHi).f32(0, 0, 0, ...j.springAng);
+  }
   return w.toBuffer();
 }
 

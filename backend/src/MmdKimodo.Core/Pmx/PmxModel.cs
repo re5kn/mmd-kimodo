@@ -17,6 +17,8 @@ public sealed class PmxModel
     public PmxMaterial[] Materials { get; init; } = [];
     public PmxBone[] Bones { get; init; } = [];
     public PmxMorph[] Morphs { get; init; } = [];
+    public PmxRigidBody[] RigidBodies { get; init; } = [];
+    public PmxJoint[] Joints { get; init; } = [];
 }
 
 public enum PmxWeightType : byte
@@ -164,3 +166,63 @@ public readonly record struct PmxVertexMorphOffset(int Vertex, Vector3 Offset);
 public readonly record struct PmxGroupMorphOffset(int Morph, float Ratio);
 
 public readonly record struct PmxBoneMorphOffset(int Bone, Vector3 Translation, Quaternion Rotation);
+
+public enum PmxRigidBodyShape : byte
+{
+    Sphere = 0,
+    Box = 1,
+    Capsule = 2,
+}
+
+public enum PmxRigidBodyMode : byte
+{
+    /// <summary>Follows its bone (kinematic).</summary>
+    Static = 0,
+    /// <summary>Simulated; drives its bone.</summary>
+    Dynamic = 1,
+    /// <summary>Simulated rotation; the bone keeps its animated position.</summary>
+    DynamicBoneAligned = 2,
+}
+
+/// <summary>Rigid body. Size: sphere (radius, -, -), box (half extents), capsule (radius, height, -).</summary>
+public sealed class PmxRigidBody
+{
+    public string Name { get; init; } = "";
+    public string NameEn { get; init; } = "";
+    /// <summary>Related bone, or -1.</summary>
+    public int Bone { get; init; } = -1;
+    /// <summary>Collision group 0-15.</summary>
+    public byte Group { get; init; }
+    /// <summary>Bit n set = collides with group n (the inverse of the "non-collision" checkboxes in PMX Editor).</summary>
+    public ushort CollisionMask { get; init; }
+    public PmxRigidBodyShape Shape { get; init; }
+    public Vector3 Size { get; init; }
+    public Vector3 Position { get; init; }
+    /// <summary>Euler angles in radians (applied as Y, X, Z).</summary>
+    public Vector3 Rotation { get; init; }
+    public float Mass { get; init; }
+    public float LinearDamping { get; init; }
+    public float AngularDamping { get; init; }
+    public float Restitution { get; init; }
+    public float Friction { get; init; }
+    public PmxRigidBodyMode Mode { get; init; }
+}
+
+/// <summary>Joint between two rigid bodies (type 0 = 6DOF spring).</summary>
+public sealed class PmxJoint
+{
+    public string Name { get; init; } = "";
+    public string NameEn { get; init; } = "";
+    public byte Type { get; init; }
+    public int RigidBodyA { get; init; } = -1;
+    public int RigidBodyB { get; init; } = -1;
+    public Vector3 Position { get; init; }
+    /// <summary>Euler angles in radians (applied as Y, X, Z).</summary>
+    public Vector3 Rotation { get; init; }
+    public Vector3 LinearLowerLimit { get; init; }
+    public Vector3 LinearUpperLimit { get; init; }
+    public Vector3 AngularLowerLimit { get; init; }
+    public Vector3 AngularUpperLimit { get; init; }
+    public Vector3 SpringLinear { get; init; }
+    public Vector3 SpringAngular { get; init; }
+}
