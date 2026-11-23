@@ -6,8 +6,9 @@ namespace MmdKimodo.Core.Pmx;
 
 /// <summary>
 /// Reader for PMX 2.0 / 2.1 models. Parses header, vertices, faces, textures,
-/// materials, bones and morphs. Display frames, rigid bodies and joints are not
-/// needed by the viewer and are skipped.
+/// materials, bones, morphs, rigid bodies and joints. Display frames are skipped,
+/// and PMX 2.1 soft bodies are not read. Files that end right after the morphs
+/// (or the display frames) are accepted and have no physics.
 /// </summary>
 public static class PmxReader
 {
@@ -61,7 +62,17 @@ public static class PmxReader
 
         var materials = ReadMaterials(r, enc, texIdx);
         var bones = ReadBones(r, enc, boneIdx);
-        var morphs = ReadMorphs(r, enc, vIdx, boneIdx, matIdx, morphIdx, globals.Length > 7 ? globals[7] : 4);
+        int rigidIdx = globals[7];
+        var morphs = ReadMorphs(r, enc, vIdx, boneIdx, matIdx, morphIdx, rigidIdx);
+
+        PmxRigidBody[] rigidBodies = [];
+        PmxJoint[] joints = [];
+        if (!r.AtEnd)
+        {
+            SkipDisplayFrames(r, enc, boneIdx, morphIdx);
+            if (!r.AtEnd) rigidBodies = ReadRigidBodies(r, enc, boneIdx);
+            if (!r.AtEnd) joints = ReadJoints(r, enc, rigidIdx);
+        }
 
         return new PmxModel
         {
@@ -77,6 +88,8 @@ public static class PmxReader
             Materials = materials,
             Bones = bones,
             Morphs = morphs,
+            RigidBodies = rigidBodies,
+            Joints = joints,
         };
     }
 
@@ -368,5 +381,77 @@ public static class PmxReader
             };
         }
         return morphs;
+    }
+
+    private static void SkipDisplayFrames(MmdBinaryReader r, Encoding enc, int boneIdx, int morphIdx)
+    {
+        int count = ReadCount(r);
+        for (int i = 0; i < count; i++)
+        {
+            r.ReadPmxText(enc);
+            r.ReadPmxText(enc);
+            r.ReadByte(); // special frame flag
+            int n = ReadCount(r);
+            for (int k = 0; k < n; k++)
+            {
+                byte target = r.ReadByte();
+                r.ReadIndex(target == 0 ? boneIdx : morphIdx);
+            }
+        }
+    }
+
+    private static PmxRigidBody[] ReadRigidBodies(MmdBinaryReader r, Encoding enc, int boneIdx)
+    {
+        int count = ReadCount(r);
+        var bodies = new PmxRigidBody[count];
+        for (int i = 0; i < count; i++)
+        {
+            bodies[i] = new PmxRigidBody
+            {
+                Name = r.ReadPmxText(enc),
+                NameEn = r.ReadPmxText(enc),
+                Bone = r.ReadIndex(boneIdx),
+                Group = r.ReadByte(),
+                CollisionMask = r.ReadUInt16(),
+                Shape = (PmxRigidBodyShape)r.ReadByte(),
+                Size = r.ReadVector3(),
+                Position = r.ReadVector3(),
+                Rotation = r.ReadVector3(),
+                Mass = r.ReadSingle(),
+                LinearDamping = r.ReadSingle(),
+                AngularDamping = r.ReadSingle(),
+                Restitution = r.ReadSingle(),
+                Friction = r.ReadSingle(),
+                Mode = (PmxRigidBodyMode)r.ReadByte(),
+            };
+        }
+        return bodies;
+    }
+
+    private static PmxJoint[] ReadJoints(MmdBinaryReader r, Encoding enc, int rigidIdx)
+    {
+        int count = ReadCount(r);
+        var joints = new PmxJoint[count];
+        for (int i = 0; i < count; i++)
+        {
+            // PMX 2.1 adds more joint types, all with the same parameter block.
+            joints[i] = new PmxJoint
+            {
+                Name = r.ReadPmxText(enc),
+                NameEn = r.ReadPmxText(enc),
+                Type = r.ReadByte(),
+                RigidBodyA = r.ReadIndex(rigidIdx),
+                RigidBodyB = r.ReadIndex(rigidIdx),
+                Position = r.ReadVector3(),
+                Rotation = r.ReadVector3(),
+                LinearLowerLimit = r.ReadVector3(),
+                LinearUpperLimit = r.ReadVector3(),
+                AngularLowerLimit = r.ReadVector3(),
+                AngularUpperLimit = r.ReadVector3(),
+                SpringLinear = r.ReadVector3(),
+                SpringAngular = r.ReadVector3(),
+            };
+        }
+        return joints;
     }
 }

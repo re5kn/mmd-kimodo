@@ -3,6 +3,7 @@ import type { ModelDto } from '../api/types';
 import { clipEnd, clipLength, type MotionClip } from '../mmd/clips';
 import type { BoundMotion } from '../mmd/motion';
 import type { ViewerOptions } from '../viewer/MmdViewer';
+import { PhysicsSection } from './PhysicsSection';
 
 interface Props {
   model: ModelDto | null;
@@ -159,13 +160,15 @@ export function Sidebar(p: Props) {
         <button onClick={p.onResetCamera}>カメラリセット</button>
       </section>
 
+      <PhysicsSection model={m} options={p.options} onOptions={p.onOptions} />
+
       <div className="status" role="status">
         {p.busy && <div className="busy">{p.busy}</div>}
         {p.error && <div className="error">{p.error}</div>}
       </div>
 
       <footer className="sidebar-footer">
-        物理演算・材質モーフ・カメラモーションは未対応
+        材質モーフ・カメラモーションは未対応
       </footer>
     </aside>
   );

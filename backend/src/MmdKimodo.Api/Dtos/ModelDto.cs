@@ -19,7 +19,9 @@ public sealed record ModelDto(
     MaterialDto[] Materials,
     TextureDto[] Textures,
     BoneDto[] Bones,
-    MorphDto[] Morphs);
+    MorphDto[] Morphs,
+    RigidBodyDto[] RigidBodies,
+    JointDto[] Joints);
 
 public sealed record GeometryDto(
     /// <summary>Float32 x3 per vertex.</summary>
@@ -86,3 +88,36 @@ public sealed record MorphDto(
     GroupOffsetDto[]? Group);
 
 public sealed record GroupOffsetDto(int Morph, float Ratio);
+
+/// <summary>Rigid body. Shape: 0 sphere, 1 box, 2 capsule. Mode: 0 follow bone, 1 physics, 2 physics + bone position.</summary>
+public sealed record RigidBodyDto(
+    string Name,
+    string NameEn,
+    int Bone,
+    int Group,
+    int CollisionMask,
+    int Shape,
+    float[] Size,
+    float[] Position,
+    float[] Rotation,
+    float Mass,
+    float LinearDamping,
+    float AngularDamping,
+    float Restitution,
+    float Friction,
+    int Mode);
+
+public sealed record JointDto(
+    string Name,
+    string NameEn,
+    int Type,
+    int RigidBodyA,
+    int RigidBodyB,
+    float[] Position,
+    float[] Rotation,
+    float[] LinearLowerLimit,
+    float[] LinearUpperLimit,
+    float[] AngularLowerLimit,
+    float[] AngularUpperLimit,
+    float[] SpringLinear,
+    float[] SpringAngular);

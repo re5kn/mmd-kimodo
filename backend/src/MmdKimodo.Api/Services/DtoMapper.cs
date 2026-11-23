@@ -92,8 +92,17 @@ public static class DtoMapper
             return new MorphDto(mo.Name, mo.NameEn, mo.Panel, (int)mo.Type, vi, vo, group);
         }).ToArray();
 
+        var rigidBodies = m.RigidBodies.Select(rb => new RigidBodyDto(
+            rb.Name, rb.NameEn, rb.Bone, rb.Group, rb.CollisionMask, (int)rb.Shape, A(rb.Size), A(rb.Position), A(rb.Rotation),
+            rb.Mass, rb.LinearDamping, rb.AngularDamping, rb.Restitution, rb.Friction, (int)rb.Mode)).ToArray();
+
+        var joints = m.Joints.Select(j => new JointDto(
+            j.Name, j.NameEn, j.Type, j.RigidBodyA, j.RigidBodyB, A(j.Position), A(j.Rotation),
+            A(j.LinearLowerLimit), A(j.LinearUpperLimit), A(j.AngularLowerLimit), A(j.AngularUpperLimit),
+            A(j.SpringLinear), A(j.SpringAngular))).ToArray();
+
         return new ModelDto(uploadId, pmxPath, candidates, m.Name, m.NameEn, m.Comment, m.Version,
-            n, m.Indices.Length / 3, geometry, materials, textures, bones, morphs);
+            n, m.Indices.Length / 3, geometry, materials, textures, bones, morphs, rigidBodies, joints);
     }
 
     public static MotionDto ToDto(VmdMotion v, string fileName)

@@ -8,6 +8,10 @@ import { decodeFloat32, decodeUint16, decodeUint32 } from '../mmd/decode';
 import { MorphApplier } from '../mmd/morph';
 import { PoseSolver } from '../mmd/pose';
 import { sampleBoneTrack, sampleIkEnabled, sampleMorphTrack, type BoundMotion } from '../mmd/motion';
+import { createPhysicsEngine, type PhysicsEngine, type PhysicsEngineKind } from '../physics';
+import { PhysicsRig } from '../physics/rig';
+import { RigidBodyHelper } from './RigidBodyHelper';
+import { physicsStatusStore } from './physicsStatus';
 
 /**
  * PMX space is left-handed (model faces -Z). three.js is right-handed.
@@ -22,7 +26,23 @@ export interface ViewerOptions {
   showBones: boolean;
   showOutline: boolean;
   enableIk: boolean;
+  enablePhysics: boolean;
+  physicsEngine: PhysicsEngineKind;
+  showRigidBodies: boolean;
 }
+
+export const DEFAULT_VIEWER_OPTIONS: ViewerOptions = {
+  showGrid: true,
+  showBones: false,
+  showOutline: true,
+  enableIk: true,
+  enablePhysics: true,
+  physicsEngine: 'ammo',
+  showRigidBodies: false,
+};
+
+/** Frame jumps larger than this (or backwards) restart the simulation. */
+const PHYSICS_RESET_FRAME_JUMP = 2;
 
 export interface LoadedModelInfo {
   missingTextures: string[];
@@ -50,7 +70,16 @@ export class MmdViewer {
   private disposed = false;
   private needsRender = true;
 
-  options: ViewerOptions = { showGrid: true, showBones: false, showOutline: true, enableIk: true };
+  private physics: PhysicsEngine | null = null;
+  private physicsRequest = 0;
+  private physicsNeedsReset = true;
+  private physicsTarget: THREE.Matrix4[] = [];
+  private rig: PhysicsRig | null = null;
+  private rigidBodyHelper: RigidBodyHelper | null = null;
+  private lastTick = 0;
+  private readonly unsubscribeReset: () => void;
+
+  options: ViewerOptions = { ...DEFAULT_VIEWER_OPTIONS };
 
   constructor(private readonly container: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -89,12 +118,18 @@ export class MmdViewer {
     this.resizeObserver.observe(container);
     this.resize();
     this.loop();
+    this.unsubscribeReset = physicsStatusStore.onResetRequest(() => this.resetPhysics());
+    void this.syncPhysicsEngine();
   }
 
   dispose(): void {
     this.disposed = true;
     this.resizeObserver.disconnect();
+    this.unsubscribeReset();
     this.clearModel();
+    this.physicsRequest++;
+    this.physics?.dispose();
+    this.physics = null;
     this.controls.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
@@ -121,11 +156,18 @@ export class MmdViewer {
   }
 
   setOptions(opts: Partial<ViewerOptions>): void {
-    const ikChanged = opts.enableIk !== undefined && opts.enableIk !== this.options.enableIk;
+    const prev = this.options;
     this.options = { ...this.options, ...opts };
-    this.grid.visible = this.options.showGrid;
-    if (this.skeletonHelper) this.skeletonHelper.visible = this.options.showBones;
-    if (ikChanged) this.applyFrame();
+    const o = this.options;
+    this.grid.visible = o.showGrid;
+    if (this.skeletonHelper) this.skeletonHelper.visible = o.showBones;
+    if (this.rigidBodyHelper) this.rigidBodyHelper.visible = o.showRigidBodies;
+    if (o.enablePhysics !== prev.enablePhysics || o.physicsEngine !== prev.physicsEngine) {
+      void this.syncPhysicsEngine();
+    } else if (o.enableIk !== prev.enableIk || o.showRigidBodies !== prev.showRigidBodies) {
+      this.physicsNeedsReset = true;
+      this.applyFrame();
+    }
     this.needsRender = true;
   }
 
@@ -221,6 +263,14 @@ export class MmdViewer {
     this.morphs = new MorphApplier(model, positions.slice(), positions);
     this.morphWeights = new Float32Array(model.morphs.length);
 
+    const physicsModel = { bones: model.bones, rigidBodies: model.rigidBodies ?? [], joints: model.joints ?? [] };
+    this.rig = new PhysicsRig(physicsModel);
+    this.physicsTarget = model.bones.map(() => new THREE.Matrix4());
+    this.rigidBodyHelper = new RigidBodyHelper(physicsModel.rigidBodies);
+    this.rigidBodyHelper.visible = this.options.showRigidBodies;
+    this.scene.add(this.rigidBodyHelper);
+    this.setupPhysicsModel();
+
     this.applyFrame();
     this.resetCamera();
     return { missingTextures };
@@ -228,15 +278,86 @@ export class MmdViewer {
 
   setMotion(motion: BoundMotion | null): void {
     this.motion = motion;
+    this.physicsNeedsReset = true;
     this.applyFrame();
   }
 
   setFrame(frame: number): void {
+    if (frame === this.frame) return;
+    if (frame < this.frame || frame - this.frame > PHYSICS_RESET_FRAME_JUMP) this.physicsNeedsReset = true;
     this.frame = frame;
+    // While physics runs, the render loop evaluates the pose every tick.
+    if (!this.physicsActive()) this.applyFrame();
+  }
+
+  /** Restarts the simulation from the current pose. */
+  resetPhysics(): void {
+    this.physicsNeedsReset = true;
     this.applyFrame();
   }
 
-  private applyFrame(): void {
+  private physicsActive(): boolean {
+    return !!this.physics && !!this.model && this.model.rigidBodies?.length > 0;
+  }
+
+  /** Creates, swaps or drops the physics engine to match the options. */
+  private async syncPhysicsEngine(): Promise<void> {
+    const request = ++this.physicsRequest;
+    const want = this.options.enablePhysics ? this.options.physicsEngine : null;
+    if (this.physics && this.physics.kind !== want) {
+      this.physics.dispose();
+      this.physics = null;
+    }
+    if (!want) {
+      this.publishPhysicsStatus('off');
+      this.applyFrame();
+      return;
+    }
+    if (!this.physics) {
+      this.publishPhysicsStatus('loading');
+      try {
+        const engine = await createPhysicsEngine(want);
+        if (request !== this.physicsRequest || this.disposed) {
+          engine.dispose();
+          return;
+        }
+        this.physics = engine;
+      } catch (e) {
+        if (request !== this.physicsRequest) return;
+        console.error(e);
+        this.publishPhysicsStatus('error', e instanceof Error ? e.message : String(e));
+        this.applyFrame();
+        return;
+      }
+    }
+    this.setupPhysicsModel();
+    this.applyFrame();
+  }
+
+  /** Registers the current model's rigid bodies and joints with the engine. */
+  private setupPhysicsModel(): void {
+    const { physics, rig } = this;
+    if (!physics) return;
+    physics.setup(rig ? rig.model : { bones: [], rigidBodies: [], joints: [] });
+    this.physicsNeedsReset = true;
+    this.publishPhysicsStatus('ready');
+  }
+
+  private publishPhysicsStatus(state: 'off' | 'loading' | 'ready' | 'error', message?: string): void {
+    physicsStatusStore.set({
+      state,
+      engine: state === 'off' ? null : this.options.physicsEngine,
+      bodyCount: this.model?.rigidBodies?.length ?? 0,
+      jointCount: this.model?.joints?.length ?? 0,
+      message,
+    });
+  }
+
+  /**
+   * Evaluates the pose at the current frame. With physics, `dt` seconds of
+   * simulation are run between the "before" and "after physics" bone phases.
+   */
+  private applyFrame(dt = 0): void {
     const { solver, model, mesh } = this;
     if (!solver || !model || !mesh) return;
     solver.resetInputs();
@@ -253,7 +374,26 @@ export class MmdViewer {
         if (track) this.morphWeights[i] = sampleMorphTrack(track, this.frame);
       }
     }
-    solver.solve(this.options.enableIk);
+    const physics = this.physicsActive() ? this.physics! : null;
+    if (!physics) {
+      solver.solve(this.options.enableIk);
+    } else {
+      solver.solve(this.options.enableIk, 'beforePhysics');
+      if (this.physicsNeedsReset) {
+        physics.reset(solver.world);
+        this.physicsNeedsReset = false;
+      } else {
+        physics.setBoneTransforms(solver.world);
+        physics.step(dt);
+      }
+      physics.getBoneTransforms(this.physicsTarget);
+      solver.applyPhysics(physics.boneModes, this.physicsTarget);
+      solver.solve(this.options.enableIk, 'afterPhysics');
+    }
+    if (this.rigidBodyHelper?.visible && this.rig) {
+      if (physics) this.rigidBodyHelper.updateFromEngine(physics);
+      else this.rigidBodyHelper.updateFromBones(this.rig, solver.world);
+    }
     for (let i = 0; i < solver.count; i++) {
       toThreePos(solver.localT[i], this.bones[i].position);
       toThreeQuat(solver.localR[i], this.bones[i].quaternion);
@@ -300,6 +440,12 @@ export class MmdViewer {
       this.scene.remove(this.skeletonHelper);
       this.skeletonHelper.dispose();
     }
+    if (this.rigidBodyHelper) {
+      this.scene.remove(this.rigidBodyHelper);
+      this.rigidBodyHelper.dispose();
+    }
+    this.rigidBodyHelper = null;
+    this.rig = null;
     this.mesh = null;
     this.skeletonHelper = null;
     this.model = null;
@@ -321,6 +467,10 @@ export class MmdViewer {
   private loop = () => {
     if (this.disposed) return;
     requestAnimationFrame(this.loop);
+    const now = performance.now();
+    const dt = this.lastTick > 0 ? Math.min((now - this.lastTick) / 1000, 0.1) : 0;
+    this.lastTick = now;
+    if (this.physicsActive()) this.applyFrame(dt);
     if (!this.needsRender) return;
     this.needsRender = false;
     if (this.options.showOutline) this.outline.render(this.scene, this.camera);
