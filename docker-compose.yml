@@ -6,4 +6,8 @@ services:
       - "${PORT:-8080}:8080"
     environment:
       - Storage__MaxUploads=8
+      # Kimodo generation server (re5kn/kimodopmx: docker compose up -d generator)
+      - Kimodo__Url=${KIMODO_URL:-http://host.docker.internal:9560}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped

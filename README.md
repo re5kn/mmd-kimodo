@@ -1,7 +1,7 @@
 # mmd-kimodo
 
 MMD 互換ソフトに [Kimodo](https://github.com/re5kn/kimodopmx)（テキスト→モーション生成）を統合することを目指すプロジェクトです。
-現在は **プロトタイプ**（Issue #1）で、Kimodo 連携はまだ含みません。
+現在は **プロトタイプ**（Issue #1）です。Kimodo によるモーション生成（Issue #6）はモーション作成・編集から使えます。
 
 ## プロトタイプでできること
 
@@ -20,6 +20,7 @@ MMD 互換ソフトに [Kimodo](https://github.com/re5kn/kimodopmx)（テキス�
   - 編集: モーションを選択して「モーション編集」。作成: 現在フレームにモーションがないとき「モーション作成」
   - 編集・作成中は操作領域が専用表示になり、タイムラインにボーン / モーフごとのキーフレームを表示。「〜を終了」または `Esc` で戻る
   - 位置・回転の変更はまだできません（キーのない作成中モーションは終了時に破棄）
+  - 「Kimodo で生成」でモーションを生成できます（下記）
 - ドラッグ&ドロップ（PMX / フォルダ / ZIP / VMD）
 
 未対応: ボーン / 材質 / UV モーフ、SDEF（BDEF2 として扱う）、スフィアマップ、共有トゥーンテクスチャ、カメラ / 照明モーション、PMD
@@ -31,6 +32,33 @@ MMD 互換ソフトに [Kimodo](https://github.com/re5kn/kimodopmx)（テキス�
 - 停止中も演算を続けます。シーク（逆再生や 3 フレーム以上の移動）やモーションの変更では、その姿勢から演算をやり直します
 - 実装は `frontend/src/physics/`。`PhysicsEngine` インターフェース（剛体とジョイントの登録 / ボーン姿勢を渡す / 1 ステップ進める / 剛体の姿勢をボーンに戻す）の実装として `AmmoPhysics` があり、Rapier は同じインターフェースで追加します
 - 座標は PMX のまま（左手系）で計算し、剛体・ジョイントの回転は Y→X→Z 順のオイラー角として扱います
+
+## Kimodo でモーション生成（Issue #6）
+
+モーション作成・編集の操作領域にある「KIMODO で生成」で、**プロンプト（英語）** と **長さ（2〜10 秒、既定 6 秒）** を指定して生成します。
+その他のパラメータは Kimodo デモの既定値です（シード 42、Denoising Steps 100、CFG 2.0 / 2.0、Transition frames 5、Post Processing オン）。
+
+- 生成結果は **現在フレームから** 入ります。作成中は空のモーションに、編集中は既存モーションの該当範囲を置き換えます
+  （置き換えるのは生成したボーンのキーだけ。目・髪などのボーンとモーフはそのまま）
+- 作成中のモーション名はプロンプトになります。`Ctrl+Enter` でも生成できます
+- 生成は読み込み中のモデル（PMX）に合わせてリターゲットされた VMD（30 fps）として返ります
+
+### Kimodo サーバーの起動
+
+生成は [kimodopmx](https://github.com/re5kn/kimodopmx) の生成 API サーバー（`kimodo.scripts.run_generation_server`、ポート 9560）が行います。
+GPU（VRAM 約 17GB、テキストエンコーダーを CPU にすれば数 GB）と Hugging Face のトークンが必要です。
+
+```bash
+cd ~/kimodo-docker/kimodopmx        # kimodopmx の clone 先
+docker compose up -d generator      # text-encoder と generator が起動。初回はモデルのダウンロードで時間がかかります
+curl localhost:9560/health          # "status": "ready" になれば準備完了
+
+cd ~/mmd-kimodo
+docker compose up -d --build        # 既定で http://host.docker.internal:9560 に接続
+```
+
+接続先は `KIMODO_URL=http://xxx:9560 docker compose up -d` で変えられます。画面の「KIMODO で生成」に接続状態（準備完了 / モデル読み込み中 / 接続できません）が出ます。
+Kimodo デモ（7860）と同時に動かすと VRAM が足りない場合があります。
 
 ## 画面
 
@@ -75,6 +103,8 @@ docker compose up -d --build
 | GET | `/api/uploads/{id}/model?pmx=...` | 同じアップロード内の別 PMX を読み込み |
 | GET | `/api/uploads/{id}/files/{path}` | テクスチャ等の取得 |
 | POST | `/api/motions` | multipart。`file`（VMD）をパースして返す（保存しない） |
+| GET | `/api/kimodo/status` | Kimodo サーバーの状態（`unconfigured` / `unreachable` / `loading` / `ready` / `error`） |
+| POST | `/api/kimodo/generate` | JSON `{ uploadId, pmxPath, prompt, duration }`。Kimodo で生成し、モーション（`/api/motions` と同じ形）を返す |
 
 座標は PMX のまま（左手系・Y 上・モデルは -Z 向き）で返し、フロントで Z 反転して three.js（右手系）に変換します。
 ボーン計算は PMX 座標で行い、結果のローカル姿勢だけを変換しています。
@@ -86,7 +116,7 @@ docker compose up -d --build
 ```bash
 # バックエンド (http://localhost:5080)
 cd backend
-dotnet run --project src/MmdKimodo.Api
+Kimodo__Url=http://localhost:9560 dotnet run --project src/MmdKimodo.Api
 dotnet test
 
 # フロントエンド (http://localhost:5173, /api は 5080 にプロキシ)
