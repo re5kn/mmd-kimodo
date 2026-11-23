@@ -19,6 +19,8 @@ export interface ModelDto {
   textures: TextureDto[];
   bones: BoneDto[];
   morphs: MorphDto[];
+  rigidBodies: RigidBodyDto[];
+  joints: JointDto[];
 }
 
 export interface GeometryDto {
@@ -90,6 +92,51 @@ export interface MorphDto {
   vertexIndices: string | null;
   vertexOffsets: string | null;
   group: { morph: number; ratio: number }[] | null;
+}
+
+/** Rigid body shape: 0 sphere, 1 box, 2 capsule. */
+export const RigidBodyShape = { Sphere: 0, Box: 1, Capsule: 2 } as const;
+/** 0: follows its bone, 1: simulated (drives the bone), 2: simulated rotation, bone keeps its position. */
+export const RigidBodyMode = { FollowBone: 0, Physics: 1, PhysicsWithBone: 2 } as const;
+
+export interface RigidBodyDto {
+  name: string;
+  nameEn: string;
+  /** Related bone, or -1. */
+  bone: number;
+  /** Collision group 0-15. */
+  group: number;
+  /** Bit n set = collides with group n. */
+  collisionMask: number;
+  shape: number;
+  /** Sphere: [radius], box: half extents, capsule: [radius, height]. */
+  size: Vec3;
+  position: Vec3;
+  /** Euler angles (radians), applied in Y, X, Z order. */
+  rotation: Vec3;
+  mass: number;
+  linearDamping: number;
+  angularDamping: number;
+  restitution: number;
+  friction: number;
+  mode: number;
+}
+
+/** Joint between two rigid bodies (type 0 = 6DOF spring). */
+export interface JointDto {
+  name: string;
+  nameEn: string;
+  type: number;
+  rigidBodyA: number;
+  rigidBodyB: number;
+  position: Vec3;
+  rotation: Vec3;
+  linearLowerLimit: Vec3;
+  linearUpperLimit: Vec3;
+  angularLowerLimit: Vec3;
+  angularUpperLimit: Vec3;
+  springLinear: Vec3;
+  springAngular: Vec3;
 }
 
 export interface MotionDto {
