@@ -13,10 +13,30 @@ import { BoneFlags, type BoneDto } from '../api/types';
  *   local translation = restOffset + motionT (+ appendT)
  *   local rotation    = motionR (* appendR), then overwritten by IK for links
  * IK is solved with CCD as soon as the IK bone is reached in the order.
+ *
+ * With physics, a frame is evaluated in three steps:
+ *   solve(ik, 'beforePhysics') -> physics engine -> applyPhysics() -> solve(ik, 'afterPhysics')
+ * Without physics, solve() runs both phases in one go.
  */
+export type SolvePhase = 'all' | 'beforePhysics' | 'afterPhysics';
+
+/** How a bone is driven by physics (see {@link PoseSolver.applyPhysics}). */
+export const PhysicsBoneMode = {
+  None: 0,
+  /** Position and rotation come from the rigid body. */
+  Full: 1,
+  /** Rotation comes from the rigid body; the bone keeps its animated local translation. */
+  RotationOnly: 2,
+} as const;
+
 export class PoseSolver {
   readonly count: number;
   readonly order: number[];
+  /** Deform order split at the "physics after deform" flag. */
+  readonly orderBeforePhysics: number[];
+  readonly orderAfterPhysics: number[];
+  /** Parents before children. */
+  readonly hierarchyOrder: number[];
   readonly children: number[][];
   readonly restOffset: Vector3[];
 
@@ -53,6 +73,19 @@ export class PoseSolver {
         const pb = bones[b].flags & BoneFlags.PhysicsAfterDeform ? 1 : 0;
         return pa - pb || bones[a].layer - bones[b].layer || a - b;
       });
+    const afterPhysics = (i: number) => (bones[i].flags & BoneFlags.PhysicsAfterDeform) !== 0;
+    this.orderBeforePhysics = this.order.filter((i) => !afterPhysics(i));
+    this.orderAfterPhysics = this.order.filter(afterPhysics);
+    this.hierarchyOrder = [];
+    const visited = new Uint8Array(n);
+    const visit = (i: number) => {
+      if (visited[i]) return;
+      visited[i] = 1;
+      const p = bones[i].parent;
+      if (p >= 0 && p < n && p !== i) visit(p);
+      this.hierarchyOrder.push(i);
+    };
+    for (let i = 0; i < n; i++) visit(i);
     this.motionT = bones.map(() => new Vector3());
     this.motionR = bones.map(() => new Quaternion());
     this.ikEnabled = bones.map(() => true);
@@ -75,9 +108,10 @@ export class PoseSolver {
     return out.setFromMatrixPosition(this.world[i]);
   }
 
-  solve(enableIk = true): void {
+  solve(enableIk = true, phase: SolvePhase = 'all'): void {
     const { bones } = this;
-    for (const i of this.order) {
+    const order = phase === 'all' ? this.order : phase === 'beforePhysics' ? this.orderBeforePhysics : this.orderAfterPhysics;
+    for (const i of order) {
       const b = bones[i];
       const t = this.localT[i].copy(this.restOffset[i]).add(this.motionT[i]);
       const r = this.localR[i].copy(this.motionR[i]);
@@ -103,6 +137,28 @@ export class PoseSolver {
       if (b.ik && enableIk && this.ikEnabled[i]) {
         this.solveIk(i);
       }
+    }
+  }
+
+  /**
+   * Overwrites bones driven by rigid bodies. `target` holds the bone world
+   * matrices computed from the bodies (only read where `modes[i] !== None`).
+   * Local transforms of driven bones are derived from them, and every other
+   * bone's world matrix is refreshed so children follow.
+   */
+  applyPhysics(modes: ArrayLike<number>, target: readonly Matrix4[]): void {
+    for (const i of this.hierarchyOrder) {
+      const mode = modes[i];
+      if (mode !== PhysicsBoneMode.None) {
+        const p = this.bones[i].parent;
+        const hasParent = p >= 0 && p < this.count && p !== i;
+        _m.copy(target[i]);
+        if (hasParent) _m.premultiply(_mInv.copy(this.world[p]).invert());
+        _m.decompose(_v, _q, _s);
+        if (mode === PhysicsBoneMode.Full) this.localT[i].copy(_v);
+        this.localR[i].copy(_q).normalize();
+      }
+      this.updateWorld(i);
     }
   }
 
@@ -212,6 +268,9 @@ const ONE = new Vector3(1, 1, 1);
 const X_AXIS = new Vector3(1, 0, 0);
 const _q = new Quaternion();
 const _v = new Vector3();
+const _s = new Vector3();
+const _m = new Matrix4();
+const _mInv = new Matrix4();
 
 function clamp(v: number, lo: number, hi: number): number {
   if (lo > hi) [lo, hi] = [hi, lo];
