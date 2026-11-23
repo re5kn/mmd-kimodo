@@ -126,6 +126,43 @@ describe.each(ENGINES)('%s', (_name, createEngine) => {
     engine.dispose();
   });
 
+  // A body sticking out in front of (-Z) or beside (+X) its pivot, like a breast. Gravity tilts
+  // it to a negative X (resp. Z) angle; as in MMD (Bullet), a [0, 0.5] range lets it droop and a
+  // [-0.5, 0] range holds it up.
+  test.each([
+    ['X', [0, 10, -1], 0],
+    ['Z', [1, 10, 0], 2],
+  ] as const)('one-sided angular limits around %s follow MMD\'s direction', (_axis, offset, axis) => {
+    const restingY = (range: [number, number]) => {
+      const lower: [number, number, number] = [0, 0, 0];
+      const upper: [number, number, number] = [0, 0, 0];
+      lower[axis] = range[0];
+      upper[axis] = range[1];
+      const bones = [bone('root', [0, 0, 0], -1), bone('base', [0, 10, 0], 0), bone('tip', [0, 10, 0], 1)];
+      const model: PhysicsModel = {
+        bones,
+        rigidBodies: [
+          body('base', 1, [0, 10, 0], 0, { collisionMask: 0 }),
+          body('tip', 2, [...offset], 1, { collisionMask: 0 }),
+        ],
+        joints: [joint(0, 1, [0, 10, 0], { angularLowerLimit: lower, angularUpperLimit: upper })],
+      };
+      const engine = createEngine();
+      engine.setup(model);
+      const solver = new PoseSolver(bones);
+      solver.solve();
+      engine.reset(solver.world);
+      run(engine, solver, 2);
+      const out = model.rigidBodies.map(() => new Matrix4());
+      engine.getRigidBodyTransforms(out);
+      engine.dispose();
+      return out[1].elements[13];
+    };
+    expect(restingY([-0.5, 0])).toBeGreaterThan(9.9);
+    // Drooping 0.5 rad around a pivot 1 unit away lowers it by sin(0.5) ≈ 0.48.
+    expect(restingY([0, 0.5])).toBeLessThan(9.6);
+  });
+
   test('swinging hair settles back under gravity, setup can be replaced', () => {
     const model = ponytail();
     const engine = createEngine();

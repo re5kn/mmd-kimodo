@@ -182,8 +182,11 @@ export class RapierPhysics implements PhysicsEngine {
   private createJoint(joint: JointDto, a: RigidBody, b: RigidBody, frameA: Matrix4, frameB: Matrix4): ImpulseJoint {
     const R = this.R;
     const world = this.world!;
-    const lower = [...joint.linearLowerLimit, ...joint.angularLowerLimit];
-    const upper = [...joint.linearUpperLimit, ...joint.angularUpperLimit];
+    // Bullet's 6DOF constraint (what MMD and Ammo.js use) applies the angular limits to the
+    // opposite rotation direction from Rapier, so mirror them; linear limits agree.
+    const ang = joint.angularLowerLimit.map((lo, i) => [-joint.angularUpperLimit[i], -lo]);
+    const lower = [...joint.linearLowerLimit, ...ang.map((r) => r[0])];
+    const upper = [...joint.linearUpperLimit, ...ang.map((r) => r[1])];
     const springs = [...joint.springLinear, ...joint.springAngular];
     let locked = 0;
     for (let k = 0; k < 6; k++) {
