@@ -40,6 +40,9 @@ MMD 互換ソフトに [Kimodo](https://github.com/re5kn/kimodopmx)（テキス�
 
 - 生成結果は **現在フレームから** 入ります。作成中は空のモーションに、編集中は既存モーションの該当範囲を置き換えます
   （置き換えるのは生成したボーンのキーだけ。目・髪などのボーンとモーフはそのまま）
+- Kimodo は毎フレームにキーを打つので、バックエンドで **キーフレームを間引き** ます（線形補間で再現できるキーを削除。各ボーンの最初と最後は残す）。
+  強さは「キーフレームの間引き」で選択: なし / 弱（回転 0.5° / 移動 0.02）/ 標準（1° / 0.05、既定）/ 強（2° / 0.1）。
+  Kimodo のサンプルモーションでは、標準でボーンキーが 35〜55% 程度になりました
 - 作成中のモーション名はプロンプトになります。`Ctrl+Enter` でも生成できます
 - 生成は読み込み中のモデル（PMX）に合わせてリターゲットされた VMD（30 fps）として返ります
 
@@ -104,7 +107,7 @@ docker compose up -d --build
 | GET | `/api/uploads/{id}/files/{path}` | テクスチャ等の取得 |
 | POST | `/api/motions` | multipart。`file`（VMD）をパースして返す（保存しない） |
 | GET | `/api/kimodo/status` | Kimodo サーバーの状態（`unconfigured` / `unreachable` / `loading` / `ready` / `error`） |
-| POST | `/api/kimodo/generate` | JSON `{ uploadId, pmxPath, prompt, duration }`。Kimodo で生成し、モーション（`/api/motions` と同じ形）を返す |
+| POST | `/api/kimodo/generate` | JSON `{ uploadId, pmxPath, prompt, duration, reduce? }`（`reduce`: `none` / `low` / `normal` / `high`）。Kimodo で生成し、モーション（`/api/motions` と同じ形）を返す |
 
 座標は PMX のまま（左手系・Y 上・モデルは -Z 向き）で返し、フロントで Z 反転して three.js（右手系）に変換します。
 ボーン計算は PMX 座標で行い、結果のローカル姿勢だけを変換しています。

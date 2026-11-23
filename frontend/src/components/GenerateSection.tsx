@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { generateMotion, getKimodoStatus } from '../api/client';
+import { generateMotion, getKimodoStatus, type KeyReduce } from '../api/client';
 import type { KimodoStatusDto, ModelDto, MotionDto } from '../api/types';
 
 // Kimodo demo defaults (kimodo/demo/config.py).
 export const DEFAULT_PROMPT = 'A person walks forward.';
 export const DEFAULT_DURATION = 6.0;
 const FPS = 30;
+
+const REDUCE_OPTIONS: { value: KeyReduce; label: string }[] = [
+  { value: 'none', label: 'なし（毎フレーム）' },
+  { value: 'low', label: '弱（0.5° / 0.02）' },
+  { value: 'normal', label: '標準（1° / 0.05）' },
+  { value: 'high', label: '強（2° / 0.1）' },
+];
 
 interface Props {
   model: ModelDto;
@@ -29,6 +36,7 @@ const STATUS_LABEL: Record<string, string> = {
 export function GenerateSection({ model, at, blockedReason, replacing, onGenerated }: Props) {
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
   const [duration, setDuration] = useState(DEFAULT_DURATION);
+  const [reduce, setReduce] = useState<KeyReduce>('normal');
   const [status, setStatus] = useState<KimodoStatusDto | null>(null);
   const [generating, setGenerating] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -98,7 +106,7 @@ export function GenerateSection({ model, at, blockedReason, replacing, onGenerat
     setElapsed(0);
     setError(null);
     try {
-      const mo = await generateMotion({ uploadId: model.uploadId, pmxPath: model.pmxPath, prompt: trimmed, duration }, ac.signal);
+      const mo = await generateMotion({ uploadId: model.uploadId, pmxPath: model.pmxPath, prompt: trimmed, duration, reduce }, ac.signal);
       if (mountedRef.current && !ac.signal.aborted) onGenerated(mo, trimmed, at);
     } catch (e) {
       if (mountedRef.current) {
@@ -159,6 +167,15 @@ export function GenerateSection({ model, at, blockedReason, replacing, onGenerat
           />
           <span className="muted">{frames} フレーム（{min}〜{max} 秒）</span>
         </span>
+      </label>
+
+      <label className="field" title="線形補間で再現できるキーを除きます（回転の誤差 / 移動の誤差）">
+        キーフレームの間引き
+        <select value={reduce} disabled={generating} onChange={(e) => setReduce(e.target.value as KeyReduce)}>
+          {REDUCE_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
       </label>
 
       <button className="primary" onClick={() => void generate()} disabled={generating || !!disabledReason} title="Ctrl+Enter">

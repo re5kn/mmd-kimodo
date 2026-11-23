@@ -52,7 +52,11 @@ export interface GenerateMotionRequest {
   prompt: string;
   /** Length in seconds. */
   duration: number;
+  /** Key thinning done by the backend (default normal). */
+  reduce?: KeyReduce;
 }
+
+export type KeyReduce = 'none' | 'low' | 'normal' | 'high';
 
 /** Generates a motion with Kimodo for the loaded model (returned as a VMD motion, 30 fps). */
 export async function generateMotion(req: GenerateMotionRequest, signal?: AbortSignal): Promise<MotionDto> {
