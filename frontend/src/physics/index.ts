@@ -2,10 +2,10 @@ import type { PhysicsEngine, PhysicsEngineInfo, PhysicsEngineKind } from './type
 
 export type { PhysicsEngine, PhysicsEngineInfo, PhysicsEngineKind, PhysicsModel } from './types';
 
-/** Engines shown in the settings. Rapier is planned (issue #3 Part 2). */
+/** Engines shown in the settings. */
 export const PHYSICS_ENGINES: readonly PhysicsEngineInfo[] = [
   { kind: 'ammo', label: 'Ammo.js (Bullet)', available: true },
-  { kind: 'rapier', label: 'Rapier（未実装）', available: false },
+  { kind: 'rapier', label: 'Rapier', available: true },
 ];
 
 /**
@@ -18,7 +18,9 @@ export async function createPhysicsEngine(kind: PhysicsEngineKind): Promise<Phys
       const { AmmoPhysics } = await import('./ammo/AmmoPhysics');
       return AmmoPhysics.create();
     }
-    case 'rapier':
-      throw new Error('Rapier はまだ実装されていません');
+    case 'rapier': {
+      const { RapierPhysics } = await import('./rapier/RapierPhysics');
+      return RapierPhysics.create();
+    }
   }
 }
