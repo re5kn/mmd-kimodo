@@ -9,7 +9,7 @@ import { filesFromDrop, filesFromInput, isMotionFile } from './files';
 import { clipAt, clipContains, clipEnd, emptyMotion, newClipId, timelineEnd, type MotionClip } from './mmd/clips';
 import { bindMotion, type BoundMotion } from './mmd/motion';
 import { spliceMotion } from './mmd/splice';
-import type { MmdViewer, ViewerOptions } from './viewer/MmdViewer';
+import { DEFAULT_VIEWER_OPTIONS, type MmdViewer, type ViewerOptions } from './viewer/MmdViewer';
 
 const FPS = 30;
 const NEW_MOTION_NAME = '新規モーション';
@@ -33,10 +33,7 @@ export default function App() {
   const [frame, setFrame] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [loop, setLoop] = useState(true);
-  const [options, setOptions] = useState<ViewerOptions>({
-    showGrid: true, showBones: false, showOutline: true, enableIk: true,
-    enablePhysics: true, physicsEngine: 'ammo', showRigidBodies: false,
-  });
+  const [options, setOptions] = useState<ViewerOptions>(DEFAULT_VIEWER_OPTIONS);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
