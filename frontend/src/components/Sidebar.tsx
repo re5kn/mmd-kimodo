@@ -19,6 +19,7 @@ interface Props {
   onMotionFile: (file: File | null) => void;
   onSelectPmx: (path: string) => void;
   onDeleteClip: () => void;
+  onEditClip: () => void;
   onOptions: (opts: Partial<ViewerOptions>) => void;
   onResetCamera: () => void;
 }
@@ -110,6 +111,9 @@ export function Sidebar(p: Props) {
             e.target.value = '';
           }}
         />
+        <button onClick={p.onEditClip} disabled={!!p.busy || !p.selectedClip} title="タイムラインで選択中のモーションを編集">
+          モーション編集
+        </button>
         {!p.selectedClip && (
           <p className="hint">
             {p.clipCount === 0
