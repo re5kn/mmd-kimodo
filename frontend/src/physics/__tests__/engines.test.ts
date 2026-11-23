@@ -106,6 +106,26 @@ describe.each(ENGINES)('%s', (_name, createEngine) => {
     engine.dispose();
   });
 
+  test('reset settles the hair without tearing joints', () => {
+    const model = ponytail();
+    const engine = createEngine();
+    engine.setup(model);
+    const solver = new PoseSolver(model.bones);
+    // Hair1 lifted 60°: reset places the bodies there, then the warm-up lets it fall.
+    solver.motionR[2].setFromAxisAngle(new Vector3(1, 0, 0), Math.PI / 3);
+    solver.solve();
+    const lifted = solver.worldPosition(3, new Vector3());
+    engine.reset(solver.world);
+    run(engine, solver, 1 / 60);
+    const out = model.rigidBodies.map(() => new Matrix4());
+    engine.getRigidBodyTransforms(out);
+    for (const m of out) m.elements.forEach((v) => expect(Number.isFinite(v)).toBe(true));
+    expect(solver.worldPosition(2).distanceTo(new Vector3(0, 10, 1))).toBeLessThan(0.3);
+    // The tip has started to fall from the lifted pose (0.5 s of warm-up does not fully settle a pendulum).
+    expect(solver.worldPosition(3).distanceTo(new Vector3(0, 8, 1))).toBeLessThan(lifted.distanceTo(new Vector3(0, 8, 1)) * 0.9);
+    engine.dispose();
+  });
+
   test('swinging hair settles back under gravity, setup can be replaced', () => {
     const model = ponytail();
     const engine = createEngine();

@@ -9,7 +9,9 @@ import { loadRapier, type RapierModule } from './loadRapier';
 const GRAVITY = -9.8 * 10;
 const FIXED_STEP = 1 / 120;
 const MAX_SUB_STEPS = 8;
-const WARMUP_STEPS = 60;
+/** Settling after reset(): same as Ammo.js (30 steps of 1/60 s), coarser than FIXED_STEP to keep a seek cheap. */
+const WARMUP_STEPS = 15;
+const WARMUP_DT = 1 / 30;
 
 /** Joint limits with lower == upper lock the axis; lower > upper leaves it free (as in Bullet). */
 const LOCK_EPSILON = 1e-6;
@@ -122,7 +124,9 @@ export class RapierPhysics implements PhysicsEngine {
     }
     this.accumulator = 0;
     // Let hair and skirts settle before the first frame is shown (0.5 s).
+    world.timestep = WARMUP_DT;
     for (let k = 0; k < WARMUP_STEPS; k++) world.step();
+    world.timestep = FIXED_STEP;
   }
 
   step(dt: number): void {
