@@ -1,20 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { loadModelFromUpload, uploadModel, uploadMotion, type UploadFile } from './api/client';
-import type { ModelDto, MotionDto } from './api/types';
+import type { ModelDto } from './api/types';
+import { MotionEditorPanel } from './components/MotionEditorPanel';
 import { Sidebar } from './components/Sidebar';
 import { Timeline } from './components/Timeline';
 import { Viewport } from './components/Viewport';
 import { filesFromDrop, filesFromInput, isMotionFile } from './files';
-import { bindMotion } from './mmd/motion';
+import { clipAt, emptyMotion, newClipId, timelineEnd, type MotionClip } from './mmd/clips';
+import { bindMotion, type BoundMotion } from './mmd/motion';
 import type { MmdViewer, ViewerOptions } from './viewer/MmdViewer';
 
 const FPS = 30;
+
+/** normal: model / motion loading etc. edit / create: the left panel is dedicated to the motion editor. */
+type Mode = { kind: 'normal' } | { kind: 'edit'; clipId: string } | { kind: 'create'; draft: MotionClip };
 
 export default function App() {
   const viewerRef = useRef<MmdViewer | null>(null);
   const [model, setModel] = useState<ModelDto | null>(null);
   const [missingTextures, setMissingTextures] = useState<string[]>([]);
-  const [motion, setMotion] = useState<MotionDto | null>(null);
+  const [clips, setClips] = useState<MotionClip[]>([]);
+  const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
+  const [mode, setMode] = useState<Mode>({ kind: 'normal' });
   const [frame, setFrame] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [loop, setLoop] = useState(true);
@@ -22,8 +29,25 @@ export default function App() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const bound = useMemo(() => (model && motion ? bindMotion(model, motion) : null), [model, motion]);
-  const maxFrame = motion?.maxFrame ?? 0;
+  // Each clip is matched to the model by bone / morph names.
+  const bounds = useMemo(() => {
+    const m = new Map<string, BoundMotion>();
+    if (model) for (const c of clips) m.set(c.id, bindMotion(model, c.motion));
+    return m;
+  }, [model, clips]);
+  const selectedClip = clips.find((c) => c.id === selectedClipId) ?? null;
+  const activeClip = mode.kind === 'edit' ? clips.find((c) => c.id === mode.clipId) ?? null : mode.kind === 'create' ? mode.draft : null;
+  const maxFrame = Math.max(timelineEnd(clips), mode.kind === 'create' ? mode.draft.start : 0);
+
+  // The clip under the current frame drives the pose (overlaps: the last added wins; blending comes later).
+  const playingClip = clipAt(clips, frame);
+  const playingBound = playingClip ? bounds.get(playingClip.id) ?? null : null;
+  const localFrame = playingClip ? frame - playingClip.start : 0;
+  const createBlockedReason = !model
+    ? 'モデルを読み込んでください'
+    : playingClip
+      ? `フレーム ${frame} には既にモーションがあります`
+      : null;
 
   const onReady = useCallback((v: MmdViewer | null) => {
     viewerRef.current = v;
@@ -35,8 +59,12 @@ export default function App() {
     if (!v) return;
     if (model) setMissingTextures(v.setModel(model).missingTextures);
   }, [model]);
-  useEffect(() => viewerRef.current?.setMotion(bound), [bound, model]);
-  useEffect(() => viewerRef.current?.setFrame(frame), [frame, model]);
+  useEffect(() => {
+    const v = viewerRef.current;
+    if (!v) return;
+    v.setFrame(localFrame);
+    v.setMotion(playingBound);
+  }, [playingBound, localFrame, model]);
   useEffect(() => viewerRef.current?.setOptions(options), [options]);
 
   const run = async <T,>(label: string, fn: () => Promise<T>): Promise<T | undefined> => {
@@ -68,13 +96,48 @@ export default function App() {
     const mo = await run('モーションを読み込み中…', () => uploadMotion(file));
     if (mo) {
       setPlaying(false);
-      setMotion(mo);
-      setFrame(0);
+      // The loaded motion becomes one block on the motion layer, starting at the current frame.
+      const clip: MotionClip = { id: newClipId(), name: mo.fileName.replace(/\.vmd$/i, ''), start: frame, motion: mo };
+      setClips((cs) => [...cs, clip]);
+      setSelectedClipId(clip.id);
     }
+  };
+
+  const startEdit = () => {
+    if (!selectedClip) return;
+    setPlaying(false);
+    setMode({ kind: 'edit', clipId: selectedClip.id });
+  };
+
+  const startCreate = () => {
+    if (createBlockedReason || !model) return;
+    setPlaying(false);
+    setSelectedClipId(null);
+    setMode({ kind: 'create', draft: { id: newClipId(), name: '新規モーション', start: frame, motion: emptyMotion(model.name) } });
+  };
+
+  const closeEditor = () => {
+    if (mode.kind === 'create') {
+      const d = mode.draft;
+      // Only keep the new motion once it has key frames (adding keys is not implemented yet).
+      if (d.motion.boneFrameCount + d.motion.morphFrameCount > 0) {
+        setClips((cs) => [...cs, d]);
+        setSelectedClipId(d.id);
+      }
+    }
+    setMode({ kind: 'normal' });
+  };
+
+  const deleteSelectedClip = () => {
+    if (!selectedClipId) return;
+    setPlaying(false);
+    setClips((cs) => cs.filter((c) => c.id !== selectedClipId));
+    setSelectedClipId(null);
   };
 
   const onDropFiles = async (dt: DataTransfer) => {
     const files = await filesFromDrop(dt);
+    if (mode.kind !== 'normal') return;
     const vmd = files.find(isMotionFile);
     const rest = files.filter((f) => !isMotionFile(f));
     if (rest.length > 0) await loadModelFiles(rest);
@@ -126,49 +189,59 @@ export default function App() {
       else if (e.key === 'End') setFrame(maxFrame);
       else if (e.key === ' ') {
         if (maxFrame > 0) setPlaying((p) => !p);
-      } else return;
+      } else if (e.key === 'Escape' && mode.kind !== 'normal') closeEditor();
+      else if (e.key === 'Delete' && mode.kind === 'normal' && selectedClipId) deleteSelectedClip();
+      else return;
       e.preventDefault();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [maxFrame]);
+  });
 
   return (
     <div className="app">
-      <Sidebar
-        model={model}
-        missingTextures={missingTextures}
-        motion={bound}
-        motionLoaded={motion}
-        options={options}
-        busy={busy}
-        error={error}
-        onModelFiles={(list) => loadModelFiles(filesFromInput(list))}
-        onModelFolder={(list) => loadModelFiles(filesFromInput(list))}
-        onMotionFile={loadMotionFile}
-        onSelectPmx={async (path) => {
-          if (!model) return;
-          const m = await run('モデルを読み込み中…', () => loadModelFromUpload(model.uploadId, path));
-          if (m) setModel(m);
-        }}
-        onClearMotion={() => {
-          setPlaying(false);
-          setMotion(null);
-          setFrame(0);
-        }}
-        onOptions={(o) => setOptions((prev) => ({ ...prev, ...o }))}
-        onResetCamera={() => viewerRef.current?.resetCamera()}
-      />
+      {mode.kind !== 'normal' && activeClip ? (
+        <MotionEditorPanel kind={mode.kind} clip={activeClip} frame={frame} onClose={closeEditor} />
+      ) : (
+        <Sidebar
+          model={model}
+          missingTextures={missingTextures}
+          clipCount={clips.length}
+          selectedClip={selectedClip}
+          selectedBound={selectedClip ? bounds.get(selectedClip.id) ?? null : null}
+          createBlockedReason={createBlockedReason}
+          options={options}
+          busy={busy}
+          error={error}
+          onModelFiles={(list) => loadModelFiles(filesFromInput(list))}
+          onModelFolder={(list) => loadModelFiles(filesFromInput(list))}
+          onMotionFile={loadMotionFile}
+          onSelectPmx={async (path) => {
+            if (!model) return;
+            const m = await run('モデルを読み込み中…', () => loadModelFromUpload(model.uploadId, path));
+            if (m) setModel(m);
+          }}
+          onDeleteClip={deleteSelectedClip}
+          onEditClip={startEdit}
+          onCreateMotion={startCreate}
+          onOptions={(o) => setOptions((prev) => ({ ...prev, ...o }))}
+          onResetCamera={() => viewerRef.current?.resetCamera()}
+        />
+      )}
       <main className="main">
         <Viewport onReady={onReady} onDropFiles={onDropFiles} empty={!model} />
         <Timeline
           model={model}
-          motion={motion}
+          clips={clips}
+          selectedClipId={selectedClipId}
+          mode={mode.kind}
+          activeClip={activeClip}
           frame={frame}
           maxFrame={maxFrame}
           playing={playing}
           loop={loop}
           onFrame={setFrameClamped}
+          onSelectClip={setSelectedClipId}
           onTogglePlay={() => setPlaying((p) => !p)}
           onLoopChange={setLoop}
         />

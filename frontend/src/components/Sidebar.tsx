@@ -1,13 +1,18 @@
 import { useRef } from 'react';
 import type { ModelDto } from '../api/types';
+import { clipEnd, clipLength, type MotionClip } from '../mmd/clips';
 import type { BoundMotion } from '../mmd/motion';
 import type { ViewerOptions } from '../viewer/MmdViewer';
 
 interface Props {
   model: ModelDto | null;
   missingTextures: string[];
-  motion: BoundMotion | null;
-  motionLoaded: { fileName: string; modelName: string; maxFrame: number; boneFrameCount: number; morphFrameCount: number } | null;
+  clipCount: number;
+  /** Clip selected on the timeline's motion layer. */
+  selectedClip: MotionClip | null;
+  selectedBound: BoundMotion | null;
+  /** Why "モーション作成" is unavailable, or null when it can be used. */
+  createBlockedReason: string | null;
   options: ViewerOptions;
   busy: string | null;
   error: string | null;
@@ -15,7 +20,9 @@ interface Props {
   onModelFolder: (files: FileList | null) => void;
   onMotionFile: (file: File | null) => void;
   onSelectPmx: (path: string) => void;
-  onClearMotion: () => void;
+  onDeleteClip: () => void;
+  onEditClip: () => void;
+  onCreateMotion: () => void;
   onOptions: (opts: Partial<ViewerOptions>) => void;
   onResetCamera: () => void;
 }
@@ -107,39 +114,30 @@ export function Sidebar(p: Props) {
             e.target.value = '';
           }}
         />
-        {p.motionLoaded && (
+        <button onClick={p.onEditClip} disabled={!!p.busy || !p.selectedClip} title="タイムラインで選択中のモーションを編集">
+          モーション編集
+        </button>
+        <button
+          onClick={p.onCreateMotion}
+          disabled={!!p.busy || !!p.createBlockedReason}
+          title={p.createBlockedReason ?? '現在のフレームから新しいモーションを作成'}
+        >
+          モーション作成
+        </button>
+        {p.createBlockedReason && <p className="hint">作成: {p.createBlockedReason}</p>}
+        {!p.selectedClip && (
+          <p className="hint">
+            {p.clipCount === 0
+              ? 'VMD は現在のフレーム位置からモーションレイヤーに追加されます'
+              : `モーションレイヤーに ${p.clipCount} 件。タイムラインでクリックして選択`}
+          </p>
+        )}
+        {p.selectedClip && (
           <>
-            <dl className="info">
-              <dt>ファイル</dt><dd>{p.motionLoaded.fileName}</dd>
-              <dt>対象モデル</dt><dd>{p.motionLoaded.modelName || '-'}</dd>
-              <dt>最終フレーム</dt><dd>{p.motionLoaded.maxFrame}</dd>
-              <dt>キー数</dt><dd>ボーン {p.motionLoaded.boneFrameCount.toLocaleString()} / モーフ {p.motionLoaded.morphFrameCount.toLocaleString()}</dd>
-              {p.motion && (
-                <>
-                  <dt>適用ボーン</dt>
-                  <dd>
-                    {p.motion.matchedBoneCount} / {p.motion.motion.bones.length}
-                    {p.motion.unmatchedBones.length > 0 && (
-                      <details>
-                        <summary>未対応 {p.motion.unmatchedBones.length} 件</summary>
-                        <ul>{p.motion.unmatchedBones.map((b) => <li key={b}>{b}</li>)}</ul>
-                      </details>
-                    )}
-                  </dd>
-                  <dt>適用モーフ</dt>
-                  <dd>
-                    {p.motion.matchedMorphCount} / {p.motion.motion.morphs.length}
-                    {p.motion.unmatchedMorphs.length > 0 && (
-                      <details>
-                        <summary>未対応 {p.motion.unmatchedMorphs.length} 件</summary>
-                        <ul>{p.motion.unmatchedMorphs.map((b) => <li key={b}>{b}</li>)}</ul>
-                      </details>
-                    )}
-                  </dd>
-                </>
-              )}
-            </dl>
-            <button onClick={p.onClearMotion} disabled={!!p.busy}>モーションを外す</button>
+            <ClipInfo clip={p.selectedClip} bound={p.selectedBound} />
+            <button onClick={p.onDeleteClip} disabled={!!p.busy} title="選択中のモーションをタイムラインから外す (Delete)">
+              選択中のモーションを外す
+            </button>
           </>
         )}
       </section>
@@ -170,5 +168,42 @@ export function Sidebar(p: Props) {
         物理演算・材質モーフ・カメラモーションは未対応
       </footer>
     </aside>
+  );
+}
+
+function ClipInfo({ clip, bound }: { clip: MotionClip; bound: BoundMotion | null }) {
+  const mo = clip.motion;
+  return (
+    <dl className="info">
+      <dt>名前</dt><dd>{clip.name}</dd>
+      {mo.fileName && (<><dt>ファイル</dt><dd>{mo.fileName}</dd></>)}
+      <dt>対象モデル</dt><dd>{mo.modelName || '-'}</dd>
+      <dt>範囲</dt><dd>{clip.start} – {clipEnd(clip)}（{clipLength(clip)} フレーム）</dd>
+      <dt>キー数</dt><dd>ボーン {mo.boneFrameCount.toLocaleString()} / モーフ {mo.morphFrameCount.toLocaleString()}</dd>
+      {bound && (
+        <>
+          <dt>適用ボーン</dt>
+          <dd>
+            {bound.matchedBoneCount} / {mo.bones.length}
+            {bound.unmatchedBones.length > 0 && (
+              <details>
+                <summary>未対応 {bound.unmatchedBones.length} 件</summary>
+                <ul>{bound.unmatchedBones.map((b) => <li key={b}>{b}</li>)}</ul>
+              </details>
+            )}
+          </dd>
+          <dt>適用モーフ</dt>
+          <dd>
+            {bound.matchedMorphCount} / {mo.morphs.length}
+            {bound.unmatchedMorphs.length > 0 && (
+              <details>
+                <summary>未対応 {bound.unmatchedMorphs.length} 件</summary>
+                <ul>{bound.unmatchedMorphs.map((b) => <li key={b}>{b}</li>)}</ul>
+              </details>
+            )}
+          </dd>
+        </>
+      )}
+    </dl>
   );
 }
