@@ -119,4 +119,14 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 .frame-slider { margin: 0 8px 4px; }
 .timeline-canvas { position: relative; flex: 1; min-height: 0; overflow: hidden; border-top: 1px solid var(--border); }
 .timeline-canvas canvas { position: absolute; inset: 0; cursor: crosshair; }
-.timeline-empty { position: absolute; left: 160px; top: 40px; color: var(--muted); pointer-events: none; }
+.timeline-empty { position: absolute; left: 160px; top: 60px; color: var(--muted); pointer-events: none; }
+
+/* ---- Motion layer ---- */
+:root {
+  --tl-clip: #dbe6fd;
+  --tl-clip-border: #2f6feb;
+  --tl-clip-text: #1b3f8f;
+  --tl-clip-selected: #2f6feb;
+  --tl-clip-selected-text: #ffffff;
+}
+.hint { margin: 0; font-size: 11px; color: var(--muted); }
