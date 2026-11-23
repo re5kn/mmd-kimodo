@@ -6,3 +6,4 @@ TestResults/
 .vs/
 *.user
 *.tsbuildinfo
+.env
