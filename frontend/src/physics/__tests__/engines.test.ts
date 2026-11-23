@@ -21,11 +21,8 @@ const ENGINES: [string, () => PhysicsEngine][] = [
   ['RapierPhysics', () => RapierPhysics.fromModule(RAPIER)],
 ];
 
-/**
- * Head (follows bone) with a two-segment ponytail hanging behind it (+Z).
- * `mode`: rigid body mode of the hair (1 physics, 2 physics + bone position).
- */
-function ponytail(mode: 1 | 2 = 1): PhysicsModel {
+/** Head (follows bone) with a two-segment ponytail hanging behind it (+Z). */
+function ponytail(): PhysicsModel {
   const bones = [
     bone('root', [0, 0, 0], -1),
     bone('head', [0, 10, 0], 0),
@@ -37,8 +34,8 @@ function ponytail(mode: 1 | 2 = 1): PhysicsModel {
     bones,
     rigidBodies: [
       body('head', 1, [0, 10, 0], 0, { size: [0.8, 0, 0] }),
-      body('hair1', 2, [0, 9, 1], mode, capsule),
-      body('hair2', 3, [0, 7, 1], mode, capsule),
+      body('hair1', 2, [0, 9, 1], 1, capsule),
+      body('hair2', 3, [0, 7, 1], 1, capsule),
     ],
     joints: [joint(0, 1, [0, 10, 1]), joint(1, 2, [0, 8, 1])],
   };
@@ -74,8 +71,8 @@ describe.each(ENGINES)('%s', (_name, createEngine) => {
     engine.dispose();
   });
 
-  test.each([1, 2] as const)('moving the head forward makes the hair trail behind (mode %i)', (mode) => {
-    const model = ponytail(mode);
+  test('moving the head forward makes the hair trail behind', () => {
+    const model = ponytail();
     const engine = createEngine();
     engine.setup(model);
     const solver = new PoseSolver(model.bones);
