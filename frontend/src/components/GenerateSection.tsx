@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { generateMotion, getKimodoStatus, type KeyReduce } from '../api/client';
+import { generateMotion, getKimodoStatus, translatePrompt, type KeyReduce } from '../api/client';
 import type { KimodoStatusDto, ModelDto, MotionDto } from '../api/types';
 
 // Kimodo demo defaults (kimodo/demo/config.py).
@@ -37,6 +37,8 @@ export function GenerateSection({ model, at, blockedReason, replacing, onGenerat
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
   const [duration, setDuration] = useState(DEFAULT_DURATION);
   const [reduce, setReduce] = useState<KeyReduce>('normal');
+  const [japanese, setJapanese] = useState('');
+  const [translating, setTranslating] = useState(false);
   const [status, setStatus] = useState<KimodoStatusDto | null>(null);
   const [generating, setGenerating] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -51,7 +53,7 @@ export function GenerateSection({ model, at, blockedReason, replacing, onGenerat
     try {
       setStatus(await getKimodoStatus(signal));
     } catch (e) {
-      if (!signal?.aborted) setStatus({ status: 'unreachable', model: null, error: e instanceof Error ? e.message : String(e), ready: false, minDuration: 2, maxDuration: 10 });
+      if (!signal?.aborted) setStatus({ status: 'unreachable', model: null, error: e instanceof Error ? e.message : String(e), ready: false, translation: false, minDuration: 2, maxDuration: 10 });
     }
   }, []);
 
@@ -119,6 +121,21 @@ export function GenerateSection({ model, at, blockedReason, replacing, onGenerat
     }
   };
 
+  const translate = async () => {
+    const text = japanese.trim();
+    if (!text || translating) return;
+    setTranslating(true);
+    setError(null);
+    try {
+      const r = await translatePrompt(text);
+      if (mountedRef.current) setPrompt(r.prompt);
+    } catch (e) {
+      if (mountedRef.current) setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      if (mountedRef.current) setTranslating(false);
+    }
+  };
+
   const frames = Math.round((durationOk ? duration : DEFAULT_DURATION) * FPS);
 
   return (
@@ -134,6 +151,30 @@ export function GenerateSection({ model, at, blockedReason, replacing, onGenerat
       </div>
       {status && !status.ready && status.error && <p className="hint">{status.error}</p>}
 
+      {status?.translation && (
+        <label className="field">
+          日本語で入力（任意）
+          <textarea
+            className="prompt-input"
+            rows={2}
+            value={japanese}
+            maxLength={1000}
+            disabled={generating || translating}
+            placeholder="例: 右手を振りながら前に歩く"
+            onChange={(e) => setJapanese(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                void translate();
+              }
+            }}
+          />
+          <button onClick={() => void translate()} disabled={generating || translating || !japanese.trim()} title="Ctrl+Enter">
+            {translating ? '翻訳中…' : '英語に翻訳 ↓'}
+          </button>
+        </label>
+      )}
+
       <label className="field">
         プロンプト（英語）
         <textarea
@@ -141,7 +182,7 @@ export function GenerateSection({ model, at, blockedReason, replacing, onGenerat
           rows={3}
           value={prompt}
           maxLength={1000}
-          disabled={generating}
+          disabled={generating || translating}
           placeholder={DEFAULT_PROMPT}
           onChange={(e) => setPrompt(e.target.value)}
           onKeyDown={(e) => {
@@ -178,7 +219,7 @@ export function GenerateSection({ model, at, blockedReason, replacing, onGenerat
         </select>
       </label>
 
-      <button className="primary" onClick={() => void generate()} disabled={generating || !!disabledReason} title="Ctrl+Enter">
+      <button className="primary" onClick={() => void generate()} disabled={generating || translating || !!disabledReason} title="Ctrl+Enter">
         {generating ? `生成中… ${elapsed.toFixed(0)} 秒` : '生成'}
       </button>
       {generating ? (

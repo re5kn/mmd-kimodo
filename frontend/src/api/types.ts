@@ -198,6 +198,8 @@ export interface KimodoStatusDto {
   model: string | null;
   error: string | null;
   ready: boolean;
+  /** Japanese prompts can be translated (Claude API key configured). */
+  translation: boolean;
   minDuration: number;
   maxDuration: number;
 }

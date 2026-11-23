@@ -68,3 +68,14 @@ export async function generateMotion(req: GenerateMotionRequest, signal?: AbortS
   });
   return parseResponse<MotionDto>(res);
 }
+
+/** Japanese (or rough English) motion description -> English Kimodo prompt (Claude API). */
+export async function translatePrompt(text: string, signal?: AbortSignal): Promise<{ prompt: string; model: string }> {
+  const res = await fetch('/api/kimodo/translate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+    signal,
+  });
+  return parseResponse<{ prompt: string; model: string }>(res);
+}

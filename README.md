@@ -43,6 +43,9 @@ MMD 互換ソフトに [Kimodo](https://github.com/re5kn/kimodopmx)（テキス�
 - Kimodo は毎フレームにキーを打つので、バックエンドで **キーフレームを間引き** ます（線形補間で再現できるキーを削除。各ボーンの最初と最後は残す）。
   強さは「キーフレームの間引き」で選択: なし / 弱（回転 0.5° / 移動 0.02）/ 標準（1° / 0.05、既定）/ 強（2° / 0.1）。
   Kimodo のサンプルモーションでは、標準でボーンキーが 35〜55% 程度になりました
+- **日本語で入力**: Claude API のキーを設定すると「日本語で入力」欄が出ます。「英語に翻訳」で Kimodo 向けの英文（`A person ...`）がプロンプト欄に入り、確認・修正してから生成できます
+  - `.env`（コミットしない）に `ANTHROPIC_API_KEY=...` を書いて `docker compose up -d`。モデルは `TRANSLATION_MODEL`（既定 `claude-opus-5-5`、例: `claude-haiku-5-5`）
+  - 入力した文章は Anthropic の API に送られます
 - 作成中のモーション名はプロンプトになります。`Ctrl+Enter` でも生成できます
 - 生成は読み込み中のモデル（PMX）に合わせてリターゲットされた VMD（30 fps）として返ります
 
@@ -107,6 +110,7 @@ docker compose up -d --build
 | GET | `/api/uploads/{id}/files/{path}` | テクスチャ等の取得 |
 | POST | `/api/motions` | multipart。`file`（VMD）をパースして返す（保存しない） |
 | GET | `/api/kimodo/status` | Kimodo サーバーの状態（`unconfigured` / `unreachable` / `loading` / `ready` / `error`） |
+| POST | `/api/kimodo/translate` | JSON `{ text }`。日本語の動作説明を Kimodo 向けの英語プロンプトに翻訳（Claude API）して `{ prompt, model }` を返す |
 | POST | `/api/kimodo/generate` | JSON `{ uploadId, pmxPath, prompt, duration, reduce? }`（`reduce`: `none` / `low` / `normal` / `high`）。Kimodo で生成し、モーション（`/api/motions` と同じ形）を返す |
 
 座標は PMX のまま（左手系・Y 上・モデルは -Z 向き）で返し、フロントで Z 反転して three.js（右手系）に変換します。
