@@ -18,7 +18,10 @@ export default function App() {
   const [frame, setFrame] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [loop, setLoop] = useState(true);
-  const [options, setOptions] = useState<ViewerOptions>({ showGrid: true, showBones: false, showOutline: true, enableIk: true });
+  const [options, setOptions] = useState<ViewerOptions>({
+    showGrid: true, showBones: false, showOutline: true, enableIk: true,
+    enablePhysics: true, physicsEngine: 'ammo', showRigidBodies: false,
+  });
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 

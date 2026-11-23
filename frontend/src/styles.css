@@ -73,6 +73,8 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 .status { min-height: 20px; }
 .busy { color: var(--accent); }
 .error { color: var(--error); white-space: pre-wrap; }
+.physics-note { margin: 0; font-size: 11px; color: var(--muted); }
+.physics-note.error { color: var(--error); }
 .sidebar-footer { margin-top: auto; font-size: 11px; color: var(--muted); }
 
 /* ---- Main: モデル表示領域 + タイムライン領域 ---- */
