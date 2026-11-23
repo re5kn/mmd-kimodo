@@ -277,6 +277,10 @@ export class MmdViewer {
   }
 
   setMotion(motion: BoundMotion | null): void {
+    // The app passes the playing clip's motion on every frame change; only a
+    // different motion restarts the simulation (otherwise physics would be
+    // reset on every frame during playback and never swing).
+    if (motion === this.motion) return;
     this.motion = motion;
     this.physicsNeedsReset = true;
     this.applyFrame();

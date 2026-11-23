@@ -24,8 +24,6 @@ const BT_CONSTRAINT_STOP_ERP = 2;
 interface Body {
   rb: BtRigidBody;
   kinematic: boolean;
-  /** Simulated, but its position is pinned to the bone each step (mode 2). */
-  pinPosition: boolean;
 }
 
 /**
@@ -107,7 +105,7 @@ export class AmmoPhysics implements PhysicsEngine {
       rb.setActivationState(DISABLE_DEACTIVATION);
       rb.setSleepingThresholds(0, 0);
       this.world.addRigidBody(rb, 1 << (def.group & 15), def.collisionMask & 0xffff);
-      this.bodies.push({ rb, kinematic, pinPosition: def.mode === RigidBodyMode.PhysicsWithBone });
+      this.bodies.push({ rb, kinematic });
       this.owned.push(shape, motionState);
     }
 
@@ -149,15 +147,6 @@ export class AmmoPhysics implements PhysicsEngine {
         rig.bodyTarget(i, boneWorld, this.m);
         this.setTransform(this.tf, this.m);
         body.rb.getMotionState().setWorldTransform(this.tf);
-      } else if (body.pinPosition && rig.bodyBone[i] >= 0) {
-        // Mode 2: keep the simulated rotation, take the position from the bone.
-        rig.bodyTarget(i, boneWorld, this.m);
-        this.p.setFromMatrixPosition(this.m);
-        const t = body.rb.getWorldTransform();
-        this.vec.setValue(this.p.x, this.p.y, this.p.z);
-        t.setOrigin(this.vec);
-        body.rb.setWorldTransform(t);
-        body.rb.getMotionState().setWorldTransform(t);
       }
     }
   }

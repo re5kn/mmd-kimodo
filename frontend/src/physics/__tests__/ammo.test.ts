@@ -12,8 +12,11 @@ beforeAll(async () => {
   ammo = await AmmoInit();
 });
 
-/** Head (follows bone) with a two-segment ponytail hanging behind it (+Z). */
-function ponytail(): PhysicsModel {
+/**
+ * Head (follows bone) with a two-segment ponytail hanging behind it (+Z).
+ * `mode`: rigid body mode of the hair (1 physics, 2 physics + bone position).
+ */
+function ponytail(mode: 1 | 2 = 1): PhysicsModel {
   const bones = [
     bone('root', [0, 0, 0], -1),
     bone('head', [0, 10, 0], 0),
@@ -25,8 +28,8 @@ function ponytail(): PhysicsModel {
     bones,
     rigidBodies: [
       body('head', 1, [0, 10, 0], 0, { size: [0.8, 0, 0] }),
-      body('hair1', 2, [0, 9, 1], 1, capsule),
-      body('hair2', 3, [0, 7, 1], 1, capsule),
+      body('hair1', 2, [0, 9, 1], mode, capsule),
+      body('hair2', 3, [0, 7, 1], mode, capsule),
     ],
     joints: [joint(0, 1, [0, 10, 1]), joint(1, 2, [0, 8, 1])],
   };
@@ -62,8 +65,8 @@ describe('AmmoPhysics', () => {
     engine.dispose();
   });
 
-  test('moving the head forward makes the hair trail behind', () => {
-    const model = ponytail();
+  test.each([1, 2] as const)('moving the head forward makes the hair trail behind (mode %i)', (mode) => {
+    const model = ponytail(mode);
     const engine = AmmoPhysics.fromModule(ammo);
     engine.setup(model);
     const solver = new PoseSolver(model.bones);
@@ -71,16 +74,21 @@ describe('AmmoPhysics', () => {
     engine.reset(solver.world);
     // Root moves toward -Z (the model's front) at 20 units/s.
     let rootZ = 0;
+    let maxLag = 0;
+    const head = new Vector3();
+    const tip = new Vector3();
     run(engine, solver, 0.5, (t) => {
+      // Lag of the previous step's pose (the callback runs before solving).
+      solver.worldPosition(1, head);
+      solver.worldPosition(3, tip);
+      maxLag = Math.max(maxLag, tip.z - head.z);
       rootZ = -20 * t;
       solver.motionT[0].set(0, 0, rootZ);
     });
-    const head = solver.worldPosition(1);
-    const tip = solver.worldPosition(3);
     // The hair root stays on the head (joint has no linear freedom)...
     expect(solver.worldPosition(2).distanceTo(new Vector3(0, 10, 1 + rootZ))).toBeLessThan(0.3);
-    // ...while the tip lags behind (+Z relative to the head).
-    expect(tip.z - head.z).toBeGreaterThan(1.3);
+    // ...while the tip swings back (+Z relative to the head; 1 at rest).
+    expect(maxLag).toBeGreaterThan(1.3);
     engine.dispose();
   });
 
