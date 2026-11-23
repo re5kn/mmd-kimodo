@@ -3,14 +3,23 @@ import { Matrix4, Vector3 } from 'three';
 import AmmoInit from 'ammojs-typed/wasm';
 import { RigidBodyShape } from '../../api/types';
 import { PhysicsBoneMode, PoseSolver } from '../../mmd/pose';
+import RAPIER from '@dimforge/rapier3d-compat';
 import { AmmoPhysics } from '../ammo/AmmoPhysics';
-import type { PhysicsModel } from '../types';
+import { interactionGroups, RapierPhysics, toRapierDamping } from '../rapier/RapierPhysics';
+import type { PhysicsEngine, PhysicsModel } from '../types';
 import { body, bone, joint } from './fixtures';
 
 let ammo: Awaited<ReturnType<typeof AmmoInit>>;
 beforeAll(async () => {
   ammo = await AmmoInit();
+  await RAPIER.init();
 });
+
+/** Every engine must pass the same behaviour tests. */
+const ENGINES: [string, () => PhysicsEngine][] = [
+  ['AmmoPhysics', () => AmmoPhysics.fromModule(ammo)],
+  ['RapierPhysics', () => RapierPhysics.fromModule(RAPIER)],
+];
 
 /** Head (follows bone) with a two-segment ponytail hanging behind it (+Z). */
 function ponytail(): PhysicsModel {
@@ -32,7 +41,7 @@ function ponytail(): PhysicsModel {
   };
 }
 
-function run(engine: AmmoPhysics, solver: PoseSolver, seconds: number, move?: (t: number) => void) {
+function run(engine: PhysicsEngine, solver: PoseSolver, seconds: number, move?: (t: number) => void) {
   const target = Array.from({ length: solver.count }, () => new Matrix4());
   const dt = 1 / 60;
   for (let t = 0; t < seconds; t += dt) {
@@ -47,10 +56,10 @@ function run(engine: AmmoPhysics, solver: PoseSolver, seconds: number, move?: (t
   }
 }
 
-describe('AmmoPhysics', () => {
+describe.each(ENGINES)('%s', (_name, createEngine) => {
   test('hair hanging straight down stays in place and attached', () => {
     const model = ponytail();
-    const engine = AmmoPhysics.fromModule(ammo);
+    const engine = createEngine();
     engine.setup(model);
     const solver = new PoseSolver(model.bones);
     solver.solve();
@@ -64,29 +73,39 @@ describe('AmmoPhysics', () => {
 
   test('moving the head forward makes the hair trail behind', () => {
     const model = ponytail();
-    const engine = AmmoPhysics.fromModule(ammo);
+    const engine = createEngine();
     engine.setup(model);
     const solver = new PoseSolver(model.bones);
     solver.solve();
     engine.reset(solver.world);
     // Root moves toward -Z (the model's front) at 20 units/s.
     let rootZ = 0;
+    let maxLag = 0;
+    let maxAngle = 0;
+    const head = new Vector3();
+    const tip = new Vector3();
     run(engine, solver, 0.5, (t) => {
+      // Lag of the previous step's pose (the callback runs before solving).
+      solver.worldPosition(1, head);
+      solver.worldPosition(3, tip);
+      maxLag = Math.max(maxLag, tip.z - head.z);
+      maxAngle = Math.max(maxAngle, 2 * Math.acos(Math.min(1, Math.abs(solver.localR[2].w))));
       rootZ = -20 * t;
       solver.motionT[0].set(0, 0, rootZ);
     });
-    const head = solver.worldPosition(1);
-    const tip = solver.worldPosition(3);
     // The hair root stays on the head (joint has no linear freedom)...
     expect(solver.worldPosition(2).distanceTo(new Vector3(0, 10, 1 + rootZ))).toBeLessThan(0.3);
-    // ...while the tip lags behind (+Z relative to the head).
-    expect(tip.z - head.z).toBeGreaterThan(1.3);
+    // ...while the tip swings back (+Z relative to the head; 1 at rest).
+    expect(maxLag).toBeGreaterThan(1.3);
+    // The joint's ±1 rad angular limit holds (with some slack for the solver).
+    expect(maxAngle).toBeGreaterThan(0.3);
+    expect(maxAngle).toBeLessThan(1.15);
     engine.dispose();
   });
 
   test('swinging hair settles back under gravity, setup can be replaced', () => {
     const model = ponytail();
-    const engine = AmmoPhysics.fromModule(ammo);
+    const engine = createEngine();
     engine.setup(model);
     engine.setup(model); // replacing the model must not leak or crash
     const solver = new PoseSolver(model.bones);
@@ -100,5 +119,22 @@ describe('AmmoPhysics', () => {
     engine.getRigidBodyTransforms(out);
     expect(new Vector3().setFromMatrixPosition(out[0]).distanceTo(new Vector3(0, 10, 0))).toBeLessThan(1e-4);
     engine.dispose();
+  });
+});
+
+describe('Rapier parameter conversion', () => {
+  test('damping keeps the same decay per second as Bullet', () => {
+    expect(toRapierDamping(0)).toBeCloseTo(0, 12);
+    // Bullet: v *= (1 - 0.5) each second. Rapier with c: v *= 1 / (1 + c dt) per step.
+    const c = toRapierDamping(0.5);
+    let v = 1;
+    for (let i = 0; i < 120; i++) v /= 1 + c / 120;
+    expect(v).toBeCloseTo(0.5, 2);
+    expect(Number.isFinite(toRapierDamping(1))).toBe(true);
+  });
+
+  test('collision groups pack membership and filter', () => {
+    expect(interactionGroups(0, 0xffff)).toBe(0x0001ffff);
+    expect(interactionGroups(15, 0x0001)).toBe(0x80000001);
   });
 });

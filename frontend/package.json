@@ -12,6 +12,7 @@
     "sample": "node scripts/make-sample.mjs ../samples"
   },
   "dependencies": {
+    "@dimforge/rapier3d-compat": "0.21.0",
     "ammojs-typed": "1.1.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
