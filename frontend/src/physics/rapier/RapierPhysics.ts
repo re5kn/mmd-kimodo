@@ -17,7 +17,6 @@ const LOCK_EPSILON = 1e-6;
 interface Body {
   rb: RigidBody;
   kinematic: boolean;
-  pinPosition: boolean;
 }
 
 /**
@@ -82,7 +81,7 @@ export class RapierPhysics implements PhysicsEngine {
         .setCollisionGroups(interactionGroups(def.group, def.collisionMask));
       if (!kinematic) collider.setMass(def.mass);
       world.createCollider(collider, rb);
-      this.bodies.push({ rb, kinematic, pinPosition: def.mode === RigidBodyMode.PhysicsWithBone });
+      this.bodies.push({ rb, kinematic });
     }
 
     for (const { joint, a, b, frameA, frameB } of rig.joints) {
@@ -99,9 +98,6 @@ export class RapierPhysics implements PhysicsEngine {
         rig.bodyTarget(i, boneWorld, this.m).decompose(this.p, this.q, this.s);
         body.rb.setNextKinematicTranslation(this.p);
         body.rb.setNextKinematicRotation(this.q);
-      } else if (body.pinPosition && rig.bodyBone[i] >= 0) {
-        rig.bodyTarget(i, boneWorld, this.m);
-        body.rb.setTranslation(this.p.setFromMatrixPosition(this.m), true);
       }
     }
   }
