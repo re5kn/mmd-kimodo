@@ -119,6 +119,9 @@ api.MapPost("/kimodo/generate", async (GenerateRequest req, UploadStore store, K
         var vmd = await kimodo.GenerateAsync(req.Prompt!, req.Duration, pmxPath, ct);
         using var ms = new MemoryStream(vmd);
         var motion = VmdReader.Read(ms);
+        // Kimodo keys every frame; drop the keys linear interpolation reproduces.
+        var reduce = VmdKeyReducer.Preset(req.Reduce);
+        if (reduce is not null) motion = VmdKeyReducer.Reduce(motion, reduce);
         return Results.Ok(DtoMapper.ToDto(motion, "kimodo.vmd"));
     }
     catch (KimodoException e)
@@ -167,4 +170,5 @@ static IResult LoadModel(UploadStore store, UploadStore.Upload upload, string? r
     }
 }
 
-record GenerateRequest(string UploadId, string PmxPath, string? Prompt, double Duration);
+/// <param name="Reduce">Key thinning: none | low | normal (default) | high.</param>
+record GenerateRequest(string UploadId, string PmxPath, string? Prompt, double Duration, string? Reduce = null);
