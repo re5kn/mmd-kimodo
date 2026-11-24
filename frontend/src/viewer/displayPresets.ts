@@ -135,6 +135,54 @@ export function createPresetMaterial(preset: DisplayPreset, src: PresetMaterialS
   return mat;
 }
 
+/** Skin tuning for the 'real' preset (see useSkinScatter). */
+export const SKIN = {
+  /** How far light wraps past the terminator (0: plain Lambert). */
+  wrap: 0.6,
+  /** Color of the light that scatters into the wrapped band. */
+  scatter: [0.9, 0.25, 0.3] as [number, number, number],
+  /** Emissive tint multiplied by the texture. */
+  glow: [0.28, 0.09, 0.08] as [number, number, number],
+  /**
+   * Multiplied into the base color: offsets the cool sky and ACES, which
+   * otherwise wash pale skin out to gray-white.
+   */
+  tint: [0.95, 0.72, 0.72] as [number, number, number],
+};
+
+export const SKIN_SCATTER_LINE = 'reflectedLight.directDiffuse += irradiance * diffuseBRDF * ( 1.0 - F );';
+
+/**
+ * Cheap subsurface scattering: light wraps past the terminator
+ * (wrap = (N·L + w) / (1 + w)) and the extra band is tinted red, so the
+ * light-to-shadow edge of skin turns warm instead of gray.
+ */
+function useSkinScatter(mat: THREE.Material): void {
+  const scatter = new THREE.Color(...SKIN.scatter);
+  mat.onBeforeCompile = (shader) => {
+    const chunk = THREE.ShaderChunk.lights_physical_pars_fragment;
+    if (!chunk.includes(SKIN_SCATTER_LINE)) {
+      console.warn('skin scatter: three.js lighting chunk changed; using plain diffuse');
+      return;
+    }
+    shader.uniforms.skinScatter = { value: scatter };
+    shader.uniforms.skinWrap = { value: SKIN.wrap };
+    const patched = chunk.replace(
+      SKIN_SCATTER_LINE,
+      `{
+    float skinNL = dot( geometryNormal, directLight.direction );
+    float skinWrapNL = saturate( ( skinNL + skinWrap ) / ( 1.0 + skinWrap ) );
+    vec3 skinBand = skinScatter * max( skinWrapNL - saturate( skinNL ), 0.0 ) * directLight.color;
+    reflectedLight.directDiffuse += ( irradiance + skinBand ) * diffuseBRDF * ( 1.0 - F );
+  }`,
+    );
+    shader.fragmentShader =
+      'uniform vec3 skinScatter;\nuniform float skinWrap;\n' +
+      shader.fragmentShader.replace('#include <lights_physical_pars_fragment>', patched);
+  };
+  mat.customProgramCacheKey = () => 'skin-scatter';
+}
+
 /**
  * Tiles a shared detail map over one material: `across` × `along` model
  * units per tile, converted to UV repeats with the material's UV density.
@@ -189,9 +237,11 @@ function createRealMaterial(src: PresetMaterialSource, shared: PresetShared): TH
     case 'skin':
       mat.roughness = 0.6;
       mat.specularIntensity = 0.2;
-      // A little self-lit warmth stands in for light scattering under the skin.
+      // Self-lit warmth keeps shadowed skin from going gray.
       mat.emissiveMap = src.map;
-      mat.emissive.setRGB(0.12, 0.06, 0.05);
+      mat.emissive.setRGB(SKIN.glow[0], SKIN.glow[1], SKIN.glow[2]);
+      mat.color.multiply(new THREE.Color(SKIN.tint[0], SKIN.tint[1], SKIN.tint[2]));
+      useSkinScatter(mat);
       break;
     case 'metal':
       mat.metalness = 0.85;

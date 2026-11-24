@@ -3,6 +3,8 @@ import { describe, expect, test } from 'vitest';
 import {
   CLAY_COLOR,
   DISPLAY_PRESETS,
+  SKIN,
+  SKIN_SCATTER_LINE,
   createPresetMaterial,
   specularityToRoughness,
   type PresetMaterialSource,
@@ -81,6 +83,21 @@ describe('real preset', () => {
     expect(cloth.normalMap).not.toBeNull();
     expect(cloth.normalMap!.repeat.x).toBeCloseTo(12 / 0.6);
     expect(real('cloth', 0) as THREE.MeshPhysicalMaterial).toHaveProperty('normalMap', null);
+  });
+
+  test('skin wraps light past the terminator with a warm tint', () => {
+    const skin = real('skin') as THREE.MeshPhysicalMaterial;
+    const shader = {
+      fragmentShader: 'void main() {}\n#include <lights_physical_pars_fragment>\n',
+      uniforms: {},
+    } as unknown as THREE.WebGLProgramParametersWithUniforms;
+    skin.onBeforeCompile(shader, null as unknown as THREE.WebGLRenderer);
+    expect(THREE.ShaderChunk.lights_physical_pars_fragment).toContain(SKIN_SCATTER_LINE);
+    expect(shader.fragmentShader).not.toContain('#include <lights_physical_pars_fragment>');
+    expect(shader.fragmentShader).toContain('skinWrapNL');
+    expect(shader.uniforms.skinWrap.value).toBe(SKIN.wrap);
+    // Tinted toward red so tone mapping does not wash it out.
+    expect(skin.color.r).toBeGreaterThan(skin.color.b);
   });
 
   test('draws thinner outlines', () => {
