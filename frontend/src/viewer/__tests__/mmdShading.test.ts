@@ -40,7 +40,7 @@ describe('MMD shading', () => {
     expect(u.mmdDiffuse.value.toArray()).toEqual([0.8, 0.6, 0.4]);
     expect(u.mmdAmbient.value.toArray()).toEqual([0.4, 0.3, 0.2]);
     expect(u.mmdShininess.value).toBe(12);
-    expect(u.mmdLightColor.value).toBeCloseTo(MMD_LIGHT_COLOR);
+    expect(u.mmdLightColor.value.x).toBeCloseTo(MMD_LIGHT_COLOR);
   });
 
   test('has a self-shadow path that darkens toward the toon bottom color', () => {
@@ -48,6 +48,14 @@ describe('MMD shading', () => {
     expect(frag).toContain('min( clamp( mmdNL * 3.0, 0.0, 1.0 ), mmdLit )');
     expect(frag).toContain('vec2( 0.0, 1.0 )');
     expect(frag).toContain('directionalShadowMap[ 0 ]');
+  });
+
+  test('materials can share one light color uniform', () => {
+    const light = { value: new THREE.Vector3(1, 0.5, 0) };
+    const a = compile(createMmdMaterial(source(), {}, light)).uniforms as Record<string, THREE.IUniform>;
+    const b = compile(createMmdMaterial(source(), {}, light)).uniforms as Record<string, THREE.IUniform>;
+    expect(a.mmdLightColor).toBe(light);
+    expect(b.mmdLightColor).toBe(light);
   });
 
   test('uses the toon as its gradient map, or none (white) without one', () => {
