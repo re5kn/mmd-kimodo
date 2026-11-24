@@ -5,6 +5,7 @@ import {
   DISPLAY_PRESETS,
   SKIN,
   SKIN_SCATTER_LINE,
+  TOON_RAMP_CHUNK,
   createPresetMaterial,
   specularityToRoughness,
   type PresetMaterialSource,
@@ -61,6 +62,30 @@ describe('display presets', () => {
     expect(specularityToRoughness(5)).toBeGreaterThan(specularityToRoughness(50));
     expect(specularityToRoughness(0)).toBe(1);
     expect(specularityToRoughness(100000)).toBe(0.2);
+  });
+});
+
+describe('mmd preset toon', () => {
+  const compile = (mat: THREE.Material) => {
+    const shader = { fragmentShader: `a\n${TOON_RAMP_CHUNK}\nb` } as THREE.WebGLProgramParametersWithUniforms;
+    mat.onBeforeCompile(shader, null as unknown as THREE.WebGLRenderer);
+    return shader.fragmentShader;
+  };
+
+  test('uses the material toon and reads it like MMD (vertical, full color)', () => {
+    const toon = new THREE.DataTexture();
+    const mat = createPresetMaterial('mmd', { ...source(), toon }, shared) as THREE.MeshToonMaterial;
+    expect(mat.gradientMap).toBe(toon);
+    expect(THREE.ShaderChunk.meshtoon_frag).toContain(TOON_RAMP_CHUNK);
+    const frag = compile(mat);
+    expect(frag).not.toContain(TOON_RAMP_CHUNK);
+    expect(frag).toContain('vec2( 0.0, 0.5 - 0.5 * dotNL ) ).rgb');
+  });
+
+  test('falls back to the generic ramp without a toon', () => {
+    const mat = createPresetMaterial('mmd', source(), shared) as THREE.MeshToonMaterial;
+    expect(mat.gradientMap).toBe(shared.gradientMap);
+    expect(compile(mat)).toContain(TOON_RAMP_CHUNK);
   });
 });
 

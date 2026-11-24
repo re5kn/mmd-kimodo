@@ -9,7 +9,7 @@ import type { SurfaceKind } from './surfaceKind';
 export type DisplayPreset = 'mmd' | 'flat' | 'pbr' | 'clay' | 'real';
 
 export const DISPLAY_PRESETS: { kind: DisplayPreset; label: string; description: string }[] = [
-  { kind: 'mmd', label: 'MMD 風', description: 'トゥーン陰影（PMX の材質色・テクスチャ）' },
+  { kind: 'mmd', label: 'MMD 風', description: 'トゥーン陰影（PMX の材質色・テクスチャ・トゥーン。共有トゥーンは自作の代替）' },
   { kind: 'flat', label: 'フラット', description: '光なし。テクスチャ（なければ材質色）をそのまま表示' },
   { kind: 'pbr', label: 'PBR 風', description: '物理ベースの陰影と環境光（反射の強さから粗さを推定）' },
   { kind: 'clay', label: '粘土', description: 'グレー一色。形と陰影だけを確認' },
@@ -30,6 +30,11 @@ export interface PresetMaterialSource {
   specularity: number;
   doubleSided: boolean;
   map: THREE.Texture | null;
+  /**
+   * MMD toon ramp (lit at the top, shadow at the bottom; the model's own
+   * image or a shared-toon stand-in). Null: the preset's generic ramp.
+   */
+  toon?: THREE.Texture | null;
   /** OutlineEffect parameters (shared by every preset). */
   outline: { thickness: number; color: number[]; alpha: number; visible: boolean };
   /** What the material represents (only used by surface-aware presets). Default: cloth. */
@@ -39,7 +44,7 @@ export interface PresetMaterialSource {
 }
 
 export interface PresetShared {
-  /** Ramp used by the MMD toon shading. */
+  /** Ramp used by the MMD toon shading when a material has no toon of its own. */
   gradientMap: THREE.Texture;
   /** Tileable detail normal maps for the 'real' preset. */
   detailMaps?: { cloth: THREE.Texture; hair: THREE.Texture };
@@ -85,6 +90,32 @@ function useMapAlphaOnly(mat: THREE.Material): void {
   mat.customProgramCacheKey = () => 'map-alpha-only';
 }
 
+export const TOON_RAMP_CHUNK = '#include <gradientmap_pars_fragment>';
+
+/**
+ * Reads the gradient map the way MMD reads toon textures: vertically
+ * (top = lit, v = 0.5 - 0.5 * N·L) and in full color, so tinted toons such
+ * as pink skin shadows keep their hue. three.js reads only the red channel
+ * along U.
+ */
+function useMmdToonRamp(mat: THREE.Material): void {
+  mat.onBeforeCompile = (shader) => {
+    if (!shader.fragmentShader.includes(TOON_RAMP_CHUNK)) {
+      console.warn('mmd toon: three.js toon shader changed; using its own ramp lookup');
+      return;
+    }
+    shader.fragmentShader = shader.fragmentShader.replace(
+      TOON_RAMP_CHUNK,
+      `uniform sampler2D gradientMap;
+vec3 getGradientIrradiance( vec3 normal, vec3 lightDirection ) {
+  float dotNL = dot( normal, lightDirection );
+  return texture2D( gradientMap, vec2( 0.0, 0.5 - 0.5 * dotNL ) ).rgb;
+}`,
+    );
+  };
+  mat.customProgramCacheKey = () => 'mmd-toon-ramp';
+}
+
 export function createPresetMaterial(preset: DisplayPreset, src: PresetMaterialSource, shared: PresetShared): THREE.Material {
   const [r, g, b] = src.diffuse;
   let mat: THREE.Material;
@@ -94,9 +125,10 @@ export function createPresetMaterial(preset: DisplayPreset, src: PresetMaterialS
         ...common(src),
         color: srgb(r, g, b),
         map: src.map,
-        gradientMap: shared.gradientMap,
+        gradientMap: src.toon ?? shared.gradientMap,
         emissive: srgb(src.ambient[0] * 0.3, src.ambient[1] * 0.3, src.ambient[2] * 0.3),
       });
+      if (src.toon) useMmdToonRamp(mat);
       break;
     case 'flat':
       mat = new THREE.MeshBasicMaterial({
