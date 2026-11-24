@@ -20,7 +20,7 @@ import {
   type PresetMaterialSource,
 } from './displayPresets';
 import { createClothDetailMap, createHairDetailMap, uvDensity } from './detailMaps';
-import { classifySurface } from './surfaceKind';
+import { classifySurfaces } from './surfaceKind';
 
 /**
  * PMX space is left-handed (model faces -Z). three.js is right-handed.
@@ -239,10 +239,13 @@ export class MmdViewer {
 
     const uvs = geometry.getAttribute('uv').array;
     const texturePath = (index: number) => (index >= 0 ? model.textures[index]?.path : undefined);
+    const kinds = classifySurfaces(
+      model.materials.map((m) => ({ name: m.name, texturePaths: [texturePath(m.textureIndex), texturePath(m.sphereTextureIndex)] })),
+    );
     this.materialSources = model.materials.map((m, i) => {
       geometry.addGroup(m.indexStart, m.indexCount, i);
       return {
-        kind: classifySurface(m.name, [texturePath(m.textureIndex), texturePath(m.sphereTextureIndex)]),
+        kind: kinds[i],
         uvDensity: uvDensity(positions, uvs, indices, m.indexStart, m.indexCount),
         name: m.name,
         diffuse: [m.diffuse[0], m.diffuse[1], m.diffuse[2], m.diffuse[3]],
