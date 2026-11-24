@@ -12,6 +12,12 @@ import * as THREE from 'three';
  * converts texels back to sRGB, applies the formula there and converts the
  * result to linear for three.js's output stage.
  *
+ * With shadows on, it switches to MMD's self-shadow formula (A5):
+ *
+ *   k = min(sat(3 N·L), shadow map),  C = mix(C0 · toon(bottom), C0 + spec, k)
+ *
+ * where C0 is the color before toon and specular.
+ *
  * Built on MeshToonMaterial so skinning, alpha test, outlines and texture
  * plumbing stay three.js's; only the final color is replaced.
  */
@@ -80,13 +86,29 @@ const FRAGMENT_MAIN = /* glsl */ `
     #endif
     diffuseColor.a *= mmdSph.a;
   #endif
-  #ifdef USE_GRADIENTMAP
-    float mmdNL = dot( normal, mmdLightDir );
-    mmdColor *= sRGBTransferOETF( texture2D( gradientMap, vec2( 0.0, 0.5 - 0.5 * mmdNL ) ) ).rgb;
-  #endif
+  float mmdNL = dot( normal, mmdLightDir );
   vec3 mmdHalf = normalize( mmdLightDir + geometryViewDir );
   float mmdNH = max( dot( normal, mmdHalf ), 1e-6 );
-  mmdColor += pow( mmdNH, max( mmdShininess, 1e-4 ) ) * mmdSpecular * mmdLightColor;
+  vec3 mmdSpec = pow( mmdNH, max( mmdShininess, 1e-4 ) ) * mmdSpecular * mmdLightColor;
+  #if defined( USE_SHADOWMAP ) && NUM_DIR_LIGHT_SHADOWS > 0
+    // Self shadow, as in MMD: lit = min(sat(3 N·L), shadow map); the shadowed
+    // color is the toon's darkest (bottom) color, without specular.
+    float mmdLit = receiveShadow ? getShadow( directionalShadowMap[ 0 ], directionalLightShadows[ 0 ].shadowMapSize,
+      directionalLightShadows[ 0 ].shadowIntensity, directionalLightShadows[ 0 ].shadowBias,
+      directionalLightShadows[ 0 ].shadowRadius, vDirectionalShadowCoord[ 0 ] ) : 1.0;
+    #ifdef USE_GRADIENTMAP
+      mmdLit = min( clamp( mmdNL * 3.0, 0.0, 1.0 ), mmdLit );
+      vec3 mmdShade = sRGBTransferOETF( texture2D( gradientMap, vec2( 0.0, 1.0 ) ) ).rgb;
+    #else
+      vec3 mmdShade = vec3( 1.0 );
+    #endif
+    mmdColor = mix( mmdColor * mmdShade, mmdColor + mmdSpec, mmdLit );
+  #else
+    #ifdef USE_GRADIENTMAP
+      mmdColor *= sRGBTransferOETF( texture2D( gradientMap, vec2( 0.0, 0.5 - 0.5 * mmdNL ) ) ).rgb;
+    #endif
+    mmdColor += mmdSpec;
+  #endif
   vec3 outgoingLight = sRGBTransferEOTF( vec4( clamp( mmdColor, 0.0, 1.0 ), 1.0 ) ).rgb;
 `;
 
