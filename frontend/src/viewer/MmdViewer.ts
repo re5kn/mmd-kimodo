@@ -22,6 +22,7 @@ import {
 import { createClothDetailMap, createHairDetailMap, uvDensity } from './detailMaps';
 import { classifySurfaces } from './surfaceKind';
 import { createSharedToonTextures, sharedToonIndexFromPath } from './sharedToons';
+import { SUB_UV_ATTRIBUTE, SphereMode } from './mmdShading';
 
 /**
  * PMX space is left-handed (model faces -Z). three.js is right-handed.
@@ -221,6 +222,8 @@ export class MmdViewer {
     geometry.setAttribute('position', posAttr);
     geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
     geometry.setAttribute('uv', new THREE.BufferAttribute(decodeFloat32(model.geometry.uvs), 2));
+    const hasSubUv = !!model.geometry.uv1;
+    if (model.geometry.uv1) geometry.setAttribute(SUB_UV_ATTRIBUTE, new THREE.BufferAttribute(decodeFloat32(model.geometry.uv1), 2));
     geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(decodeUint16(model.geometry.skinIndices), 4));
     geometry.setAttribute('skinWeight', new THREE.BufferAttribute(decodeFloat32(model.geometry.skinWeights), 4));
     geometry.setIndex(new THREE.BufferAttribute(indices, 1));
@@ -257,6 +260,14 @@ export class MmdViewer {
       return tex;
     };
 
+    const sphereFor = (index: number, mode: number) => {
+      const map = index >= 0 ? textures[index] : null;
+      if (!map || mode === SphereMode.None || mode > SphereMode.SubTexture) return null;
+      // Sub-texture spheres need additional UV1; without it MMD shows nothing either.
+      if (mode === SphereMode.SubTexture && !hasSubUv) return null;
+      return { map, mode };
+    };
+
     const uvs = geometry.getAttribute('uv').array;
     const texturePath = (index: number) => (index >= 0 ? model.textures[index]?.path : undefined);
     const kinds = classifySurfaces(
@@ -275,6 +286,7 @@ export class MmdViewer {
         doubleSided: (m.flags & MaterialFlags.DoubleSided) !== 0,
         map: m.textureIndex >= 0 ? textures[m.textureIndex] ?? null : null,
         toon: toonFor(m.sharedToon, m.toonIndex),
+        sphere: sphereFor(m.sphereTextureIndex, m.sphereMode),
         outline: {
           thickness: m.edgeSize / 300,
           color: [m.edgeColor[0], m.edgeColor[1], m.edgeColor[2]],
