@@ -140,14 +140,14 @@ export const SKIN = {
   /** How far light wraps past the terminator (0: plain Lambert). */
   wrap: 0.6,
   /** Color of the light that scatters into the wrapped band. */
-  scatter: [0.9, 0.25, 0.3] as [number, number, number],
+  scatter: [0.6, 0.22, 0.35] as [number, number, number],
   /** Emissive tint multiplied by the texture. */
-  glow: [0.28, 0.09, 0.08] as [number, number, number],
+  glow: [0.14, 0.06, 0.08] as [number, number, number],
   /**
    * Multiplied into the base color: offsets the cool sky and ACES, which
    * otherwise wash pale skin out to gray-white.
    */
-  tint: [0.95, 0.72, 0.72] as [number, number, number],
+  tint: [1, 0.86, 0.9] as [number, number, number],
 };
 
 export const SKIN_SCATTER_LINE = 'reflectedLight.directDiffuse += irradiance * diffuseBRDF * ( 1.0 - F );';
