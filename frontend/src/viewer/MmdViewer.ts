@@ -22,7 +22,8 @@ import {
 import { createClothDetailMap, createHairDetailMap, uvDensity } from './detailMaps';
 import { classifySurfaces } from './surfaceKind';
 import { createSharedToonTextures, sharedToonIndexFromPath } from './sharedToons';
-import { SUB_UV_ATTRIBUTE, SphereMode } from './mmdShading';
+import { SUB_UV_ATTRIBUTE, SphereMode, createMmdLightUniform } from './mmdShading';
+import { DEFAULT_LIGHTING, resolveLighting, type LightingSettings } from './lighting';
 import { ShadowRig, shadowBounds } from './shadows';
 
 /**
@@ -43,6 +44,7 @@ export interface ViewerOptions {
   showRigidBodies: boolean;
   displayPreset: DisplayPreset;
   showShadows: boolean;
+  lighting: LightingSettings;
 }
 
 export const DEFAULT_VIEWER_OPTIONS: ViewerOptions = {
@@ -55,6 +57,7 @@ export const DEFAULT_VIEWER_OPTIONS: ViewerOptions = {
   showRigidBodies: false,
   displayPreset: 'mmd',
   showShadows: true,
+  lighting: DEFAULT_LIGHTING,
 };
 
 /** Frame jumps larger than this (or backwards) restart the simulation. */
@@ -77,6 +80,9 @@ export class MmdViewer {
   private readonly hemiLight: THREE.HemisphereLight;
   private readonly dirLight: THREE.DirectionalLight;
   private readonly shadows: ShadowRig;
+  /** Fill and rim lights of the three-point setup. */
+  private readonly extraLights: THREE.DirectionalLight[];
+  private readonly mmdLightColor = createMmdLightUniform();
   private readonly shadowSphere = new THREE.Sphere();
   private bonePoints: THREE.Vector3[] = [];
   private environment: THREE.Texture | null = null;
@@ -127,6 +133,11 @@ export class MmdViewer {
     this.dirLight = new THREE.DirectionalLight(0xffffff, 1.8);
     this.scene.add(this.dirLight);
     this.shadows = new ShadowRig(this.renderer, this.dirLight, this.scene);
+    this.extraLights = [new THREE.DirectionalLight(), new THREE.DirectionalLight()];
+    for (const light of this.extraLights) {
+      light.visible = false;
+      this.scene.add(light);
+    }
 
     this.grid = new THREE.Group();
     const grid = new THREE.GridHelper(100, 20, 0x9aa3ad, 0xd0d5db);
@@ -195,6 +206,7 @@ export class MmdViewer {
     this.shadows.setEnabled(o.showShadows);
     if (this.skeletonHelper) this.skeletonHelper.visible = o.showBones;
     if (this.rigidBodyHelper) this.rigidBodyHelper.visible = o.showRigidBodies;
+    if (o.lighting !== prev.lighting && o.displayPreset === prev.displayPreset) this.applyPresetLighting();
     if (o.displayPreset !== prev.displayPreset) {
       this.applyPresetLighting();
       if (this.mesh) this.mesh.material = this.materialsFor(o.displayPreset);
@@ -492,7 +504,7 @@ export class MmdViewer {
       if (preset === 'real' && !this.detailMaps) {
         this.detailMaps = { cloth: createClothDetailMap(), hair: createHairDetailMap() };
       }
-      const shared = { detailMaps: this.detailMaps ?? undefined };
+      const shared = { detailMaps: this.detailMaps ?? undefined, mmdLightColor: this.mmdLightColor };
       mats = this.materialSources.map((src) => createPresetMaterial(preset, src, shared));
       this.presetMaterials.set(preset, mats);
     }
@@ -504,8 +516,20 @@ export class MmdViewer {
     this.hemiLight.intensity = l.hemisphere;
     this.hemiLight.color.setHex(l.skyColor);
     this.hemiLight.groundColor.setHex(l.groundColor);
+    const lit = resolveLighting(this.options.lighting, new THREE.Vector3(...l.lightFrom));
+    const { scale, mmdColor } = lit.key;
     this.dirLight.intensity = l.directional;
-    this.shadows.setDirection(new THREE.Vector3(...l.lightFrom));
+    this.dirLight.color.setRGB(scale.r, scale.g, scale.b, THREE.SRGBColorSpace);
+    this.shadows.setDirection(lit.key.from.clone().multiplyScalar(20));
+    this.mmdLightColor.value.set(mmdColor.r, mmdColor.g, mmdColor.b);
+    this.extraLights.forEach((light, i) => {
+      const extra = lit.extras[i];
+      light.visible = !!extra;
+      if (!extra) return;
+      light.color.copy(this.dirLight.color);
+      light.intensity = l.directional * extra.strength;
+      light.position.copy(extra.from).multiplyScalar(20);
+    });
     if (l.environment > 0 && !this.environment) {
       const pmrem = new THREE.PMREMGenerator(this.renderer);
       this.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { CLOTH_TILE, HAIR_TILE } from './detailMaps';
 import type { SurfaceKind } from './surfaceKind';
-import { MMD_LIGHT_DIRECTION, createMmdMaterial } from './mmdShading';
+import { MMD_LIGHT_DIRECTION, createMmdMaterial, type MmdLightUniform } from './mmdShading';
 
 /**
  * Display presets (Issue #11 B1): the same model drawn with different
@@ -49,6 +49,8 @@ export interface PresetMaterialSource {
 }
 
 export interface PresetShared {
+  /** Light color of the MMD-style shading, shared so the lighting panel can change it live. */
+  mmdLightColor?: MmdLightUniform;
   /** Tileable detail normal maps for the 'real' preset. */
   detailMaps?: { cloth: THREE.Texture; hair: THREE.Texture };
 }
@@ -109,6 +111,7 @@ export function createPresetMaterial(preset: DisplayPreset, src: PresetMaterialS
           sphere: src.sphere ?? null,
         },
         common(src),
+        shared.mmdLightColor,
       );
       break;
     case 'flat':

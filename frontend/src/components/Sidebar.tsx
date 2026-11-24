@@ -4,6 +4,7 @@ import { clipEnd, clipLength, type MotionClip } from '../mmd/clips';
 import type { BoundMotion } from '../mmd/motion';
 import type { ViewerOptions } from '../viewer/MmdViewer';
 import { DISPLAY_PRESETS } from '../viewer/displayPresets';
+import { LightingSection } from './LightingSection';
 import { PhysicsSection } from './PhysicsSection';
 
 interface Props {
@@ -177,6 +178,8 @@ export function Sidebar(p: Props) {
         </label>
         <button onClick={p.onResetCamera}>カメラリセット</button>
       </section>
+
+      <LightingSection options={p.options} onOptions={p.onOptions} />
 
       <PhysicsSection model={m} options={p.options} onOptions={p.onOptions} />
 

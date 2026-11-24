@@ -54,7 +54,7 @@ uniform vec3 mmdDiffuse;
 uniform vec3 mmdAmbient;
 uniform vec3 mmdSpecular;
 uniform float mmdShininess;
-uniform float mmdLightColor;
+uniform vec3 mmdLightColor;
 #if MMD_SPHERE_MODE > 0
   uniform sampler2D mmdSphere;
 #endif
@@ -112,7 +112,18 @@ const FRAGMENT_MAIN = /* glsl */ `
   vec3 outgoingLight = sRGBTransferEOTF( vec4( clamp( mmdColor, 0.0, 1.0 ), 1.0 ) ).rgb;
 `;
 
-export function createMmdMaterial(src: MmdShadingSource, params: THREE.MeshToonMaterialParameters): THREE.MeshToonMaterial {
+/** Light color uniform shared by every MMD material of a viewer (sRGB 0-1). */
+export type MmdLightUniform = { value: THREE.Vector3 };
+
+export function createMmdLightUniform(): MmdLightUniform {
+  return { value: new THREE.Vector3(MMD_LIGHT_COLOR, MMD_LIGHT_COLOR, MMD_LIGHT_COLOR) };
+}
+
+export function createMmdMaterial(
+  src: MmdShadingSource,
+  params: THREE.MeshToonMaterialParameters,
+  lightColor: MmdLightUniform = createMmdLightUniform(),
+): THREE.MeshToonMaterial {
   const sphereMode = src.sphere ? src.sphere.mode : SphereMode.None;
   const mat = new THREE.MeshToonMaterial({
     ...params,
@@ -127,7 +138,7 @@ export function createMmdMaterial(src: MmdShadingSource, params: THREE.MeshToonM
     mmdAmbient: { value: new THREE.Vector3(...src.ambient) },
     mmdSpecular: { value: new THREE.Vector3(...src.specular) },
     mmdShininess: { value: src.specularity },
-    mmdLightColor: { value: MMD_LIGHT_COLOR },
+    mmdLightColor: lightColor,
     mmdSphere: { value: src.sphere?.map ?? null },
   };
   mat.userData.mmdUniforms = uniforms;
