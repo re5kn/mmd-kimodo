@@ -60,8 +60,13 @@ export function effectsActive(s: EffectSettings): boolean {
   return s.bloom.enabled || s.dof.enabled || s.smaa;
 }
 
-/** Bokeh aperture for a 0-1 strength (blur grows with aperture × distance from focus). */
-export const dofAperture = (strength: number) => 0.0002 + strength * 0.004;
+/**
+ * Bokeh aperture and blur cap for a 0-1 strength. Blur grows with aperture
+ * × distance from the focus (MMD units, a model is about 20 tall), so a
+ * body a few units deep stays sharp while the floor and far side blur.
+ */
+export const dofAperture = (strength: number) => 0.00005 + strength * 0.0006;
+export const dofMaxBlur = (strength: number) => 0.004 + strength * 0.016;
 
 /** Renders the scene into the composer's buffer, with OutlineEffect's outlines when asked. */
 class ScenePass extends Pass {
@@ -250,6 +255,7 @@ export class PostEffects {
     const u = this.bokeh.uniforms as Record<string, THREE.IUniform<number>>;
     u.focus.value = opts.focus;
     u.aperture.value = dofAperture(s.dof.strength);
+    u.maxblur.value = dofMaxBlur(s.dof.strength);
     this.bloom.enabled = s.bloom.enabled;
     this.bloom.strength = s.bloom.strength;
     this.bloom.radius = s.bloom.radius;
