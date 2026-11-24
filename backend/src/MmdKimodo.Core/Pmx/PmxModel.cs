@@ -35,6 +35,8 @@ public struct PmxVertex
     public Vector3 Position;
     public Vector3 Normal;
     public Vector2 Uv;
+    /// <summary>First additional UV (zero when the model has none). Used for sphere sub-textures.</summary>
+    public Vector4 AdditionalUv1;
     public PmxWeightType WeightType;
     public int Bone0, Bone1, Bone2, Bone3;
     public float Weight0, Weight1, Weight2, Weight3;

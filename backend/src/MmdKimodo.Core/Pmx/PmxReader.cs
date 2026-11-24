@@ -113,7 +113,11 @@ public static class PmxReader
             v.Position = r.ReadVector3();
             v.Normal = r.ReadVector3();
             v.Uv = r.ReadVector2();
-            for (int k = 0; k < addUv; k++) r.ReadVector4();
+            for (int k = 0; k < addUv; k++)
+            {
+                var extra = r.ReadVector4();
+                if (k == 0) v.AdditionalUv1 = extra;
+            }
             v.WeightType = (PmxWeightType)r.ReadByte();
             v.Bone1 = v.Bone2 = v.Bone3 = -1;
             switch (v.WeightType)

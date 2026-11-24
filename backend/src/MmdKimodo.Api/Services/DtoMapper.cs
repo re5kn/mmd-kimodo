@@ -21,6 +21,7 @@ public static class DtoMapper
         var pos = new float[n * 3];
         var nrm = new float[n * 3];
         var uv = new float[n * 2];
+        var uv1 = m.AdditionalUvCount > 0 ? new float[n * 2] : null;
         var si = new ushort[n * 4];
         var sw = new float[n * 4];
         for (int i = 0; i < n; i++)
@@ -29,6 +30,7 @@ public static class DtoMapper
             pos[i * 3] = v.Position.X; pos[i * 3 + 1] = v.Position.Y; pos[i * 3 + 2] = v.Position.Z;
             nrm[i * 3] = v.Normal.X; nrm[i * 3 + 1] = v.Normal.Y; nrm[i * 3 + 2] = v.Normal.Z;
             uv[i * 2] = v.Uv.X; uv[i * 2 + 1] = v.Uv.Y;
+            if (uv1 != null) { uv1[i * 2] = v.AdditionalUv1.X; uv1[i * 2 + 1] = v.AdditionalUv1.Y; }
             Span<int> b = [v.Bone0, v.Bone1, v.Bone2, v.Bone3];
             Span<float> w = [v.Weight0, v.Weight1, v.Weight2, v.Weight3];
             float total = 0;
@@ -47,7 +49,8 @@ public static class DtoMapper
         for (int i = 0; i < idx.Length; i++) idx[i] = (uint)m.Indices[i];
 
         var geometry = new GeometryDto(
-            B64<float>(pos), B64<float>(nrm), B64<float>(uv), B64<ushort>(si), B64<float>(sw), B64<uint>(idx));
+            B64<float>(pos), B64<float>(nrm), B64<float>(uv), B64<ushort>(si), B64<float>(sw), B64<uint>(idx),
+            uv1 != null ? B64<float>(uv1) : null);
 
         int start = 0;
         var materials = m.Materials.Select(mt =>

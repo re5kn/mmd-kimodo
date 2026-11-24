@@ -108,6 +108,16 @@ public class PmxReaderTests
     }
 
     [Fact]
+    public void KeepsTheFirstAdditionalUv()
+    {
+        var m = PmxReader.Read(new MemoryStream(MinimalPmx(utf8: true, indexSize: 4, additionalUvs: 2)));
+
+        Assert.Equal(2, m.AdditionalUvCount);
+        Assert.Equal(new Vector4(3, 0.5f, 0, 1), m.Vertices[3].AdditionalUv1);
+        Assert.Equal(PmxWeightType.Sdef, m.Vertices[3].WeightType);
+    }
+
+    [Fact]
     public void RejectsNonPmx()
     {
         Assert.Throws<InvalidDataException>(() => PmxReader.Read(new MemoryStream("Pmd\0\0\0\0\0"u8.ToArray())));
@@ -122,7 +132,7 @@ public class PmxReaderTests
     }
 
     /// <summary>Hand-built PMX with UTF-8 text and 4-byte indices.</summary>
-    private static byte[] MinimalPmx(bool utf8, int indexSize, bool withPhysics = false)
+    private static byte[] MinimalPmx(bool utf8, int indexSize, bool withPhysics = false, int additionalUvs = 0)
     {
         var enc = utf8 ? Encoding.UTF8 : Encoding.Unicode;
         using var ms = new MemoryStream();
@@ -142,13 +152,14 @@ public class PmxReaderTests
         w.Write("PMX "u8.ToArray());
         w.Write(2.1f);
         w.Write((byte)8);
-        w.Write(new byte[] { (byte)(utf8 ? 1 : 0), 0, (byte)indexSize, (byte)indexSize, (byte)indexSize, (byte)indexSize, (byte)indexSize, (byte)indexSize });
+        w.Write(new byte[] { (byte)(utf8 ? 1 : 0), (byte)additionalUvs, (byte)indexSize, (byte)indexSize, (byte)indexSize, (byte)indexSize, (byte)indexSize, (byte)indexSize });
         Text("テスト"); Text("test"); Text(""); Text("");
 
         w.Write(5);
         for (int i = 0; i < 5; i++)
         {
             V3(i, 0, 0); V3(0, 0, -1); w.Write(0f); w.Write(0f);
+            for (int k = 0; k < additionalUvs; k++) { w.Write(i + k * 10f); w.Write(0.5f); w.Write(0f); w.Write(1f); }
             switch (i)
             {
                 case 0: w.Write((byte)0); Idx(0); break;
