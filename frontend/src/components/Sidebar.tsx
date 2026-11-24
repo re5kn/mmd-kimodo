@@ -3,6 +3,7 @@ import type { ModelDto } from '../api/types';
 import { clipEnd, clipLength, type MotionClip } from '../mmd/clips';
 import type { BoundMotion } from '../mmd/motion';
 import type { ViewerOptions } from '../viewer/MmdViewer';
+import { DISPLAY_PRESETS } from '../viewer/displayPresets';
 import { PhysicsSection } from './PhysicsSection';
 
 interface Props {
@@ -145,6 +146,20 @@ export function Sidebar(p: Props) {
 
       <section>
         <h2>表示</h2>
+        <div className="segmented" role="radiogroup" aria-label="表示プリセット">
+          {DISPLAY_PRESETS.map((d) => (
+            <button
+              key={d.kind}
+              role="radio"
+              aria-checked={p.options.displayPreset === d.kind}
+              className={p.options.displayPreset === d.kind ? 'active' : undefined}
+              title={d.description}
+              onClick={() => p.onOptions({ displayPreset: d.kind })}
+            >
+              {d.label}
+            </button>
+          ))}
+        </div>
         <label className="check">
           <input type="checkbox" checked={p.options.showGrid} onChange={(e) => p.onOptions({ showGrid: e.target.checked })} /> グリッド
         </label>

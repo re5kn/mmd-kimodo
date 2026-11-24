@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { OutlineEffect } from 'three/addons/effects/OutlineEffect.js';
 import { TGALoader } from 'three/addons/loaders/TGALoader.js';
 import { DDSLoader } from 'three/addons/loaders/DDSLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { MaterialFlags, type ModelDto } from '../api/types';
 import { decodeFloat32, decodeUint16, decodeUint32 } from '../mmd/decode';
 import { MorphApplier } from '../mmd/morph';
@@ -12,6 +13,12 @@ import { createPhysicsEngine, type PhysicsEngine, type PhysicsEngineKind } from 
 import { PhysicsRig } from '../physics/rig';
 import { RigidBodyHelper } from './RigidBodyHelper';
 import { physicsStatusStore } from './physicsStatus';
+import {
+  createPresetMaterial,
+  presetLighting,
+  type DisplayPreset,
+  type PresetMaterialSource,
+} from './displayPresets';
 
 /**
  * PMX space is left-handed (model faces -Z). three.js is right-handed.
@@ -29,6 +36,7 @@ export interface ViewerOptions {
   enablePhysics: boolean;
   physicsEngine: PhysicsEngineKind;
   showRigidBodies: boolean;
+  displayPreset: DisplayPreset;
 }
 
 export const DEFAULT_VIEWER_OPTIONS: ViewerOptions = {
@@ -39,6 +47,7 @@ export const DEFAULT_VIEWER_OPTIONS: ViewerOptions = {
   enablePhysics: true,
   physicsEngine: 'ammo',
   showRigidBodies: false,
+  displayPreset: 'mmd',
 };
 
 /** Frame jumps larger than this (or backwards) restart the simulation. */
@@ -57,9 +66,16 @@ export class MmdViewer {
   private readonly grid: THREE.Group;
   private readonly resizeObserver: ResizeObserver;
   private readonly gradientMap: THREE.DataTexture;
+  private readonly hemiLight: THREE.HemisphereLight;
+  private readonly dirLight: THREE.DirectionalLight;
+  private environment: THREE.Texture | null = null;
 
   private model: ModelDto | null = null;
   private mesh: THREE.SkinnedMesh | null = null;
+  private materialSources: PresetMaterialSource[] = [];
+  /** Materials built so far for each display preset (built on first use). */
+  private presetMaterials = new Map<DisplayPreset, THREE.Material[]>();
+  private textures: THREE.Texture[] = [];
   private bones: THREE.Bone[] = [];
   private skeletonHelper: THREE.SkeletonHelper | null = null;
   private solver: PoseSolver | null = null;
@@ -94,10 +110,11 @@ export class MmdViewer {
     this.controls.addEventListener('change', () => (this.needsRender = true));
     this.resetCamera();
 
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x8899aa, 1.6));
-    const dir = new THREE.DirectionalLight(0xffffff, 1.8);
-    dir.position.set(-10, 30, 20);
-    this.scene.add(dir);
+    this.hemiLight = new THREE.HemisphereLight(0xffffff, 0x8899aa, 1.6);
+    this.scene.add(this.hemiLight);
+    this.dirLight = new THREE.DirectionalLight(0xffffff, 1.8);
+    this.dirLight.position.set(-10, 30, 20);
+    this.scene.add(this.dirLight);
 
     this.grid = new THREE.Group();
     const grid = new THREE.GridHelper(100, 20, 0x9aa3ad, 0xd0d5db);
@@ -113,6 +130,8 @@ export class MmdViewer {
     this.gradientMap = new THREE.DataTexture(ramp, 2, 1, THREE.RGBAFormat);
     this.gradientMap.minFilter = this.gradientMap.magFilter = THREE.NearestFilter;
     this.gradientMap.needsUpdate = true;
+
+    this.applyPresetLighting();
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
@@ -130,6 +149,8 @@ export class MmdViewer {
     this.physicsRequest++;
     this.physics?.dispose();
     this.physics = null;
+    this.environment?.dispose();
+    this.gradientMap.dispose();
     this.controls.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
@@ -162,6 +183,10 @@ export class MmdViewer {
     this.grid.visible = o.showGrid;
     if (this.skeletonHelper) this.skeletonHelper.visible = o.showBones;
     if (this.rigidBodyHelper) this.rigidBodyHelper.visible = o.showRigidBodies;
+    if (o.displayPreset !== prev.displayPreset) {
+      this.applyPresetLighting();
+      if (this.mesh) this.mesh.material = this.materialsFor(o.displayPreset);
+    }
     if (o.enablePhysics !== prev.enablePhysics || o.physicsEngine !== prev.physicsEngine) {
       void this.syncPhysicsEngine();
     } else if (o.enableIk !== prev.enableIk || o.showRigidBodies !== prev.showRigidBodies) {
@@ -205,31 +230,26 @@ export class MmdViewer {
       }
       return this.loadTexture(t.url, t.path);
     });
+    this.textures = textures.filter((t): t is THREE.Texture => !!t);
 
-    const materials = model.materials.map((m, i) => {
+    this.materialSources = model.materials.map((m, i) => {
       geometry.addGroup(m.indexStart, m.indexCount, i);
-      const tex = m.textureIndex >= 0 ? textures[m.textureIndex] ?? null : null;
-      const mat = new THREE.MeshToonMaterial({
+      return {
         name: m.name,
-        color: new THREE.Color().setRGB(m.diffuse[0], m.diffuse[1], m.diffuse[2], THREE.SRGBColorSpace),
-        opacity: m.diffuse[3],
-        // MMD draws every material in order with alpha blending.
-        transparent: true,
-        alphaTest: 0.001,
-        depthWrite: true,
-        side: m.flags & MaterialFlags.DoubleSided ? THREE.DoubleSide : THREE.FrontSide,
-        map: tex,
-        gradientMap: this.gradientMap,
-        emissive: new THREE.Color().setRGB(m.ambient[0] * 0.3, m.ambient[1] * 0.3, m.ambient[2] * 0.3, THREE.SRGBColorSpace),
-      });
-      mat.userData.outlineParameters = {
-        thickness: m.edgeSize / 300,
-        color: [m.edgeColor[0], m.edgeColor[1], m.edgeColor[2]],
-        alpha: m.edgeColor[3],
-        visible: (m.flags & MaterialFlags.Edge) !== 0 && m.edgeSize > 0 && m.diffuse[3] > 0,
+        diffuse: [m.diffuse[0], m.diffuse[1], m.diffuse[2], m.diffuse[3]],
+        ambient: [m.ambient[0], m.ambient[1], m.ambient[2]],
+        specularity: m.specularity,
+        doubleSided: (m.flags & MaterialFlags.DoubleSided) !== 0,
+        map: m.textureIndex >= 0 ? textures[m.textureIndex] ?? null : null,
+        outline: {
+          thickness: m.edgeSize / 300,
+          color: [m.edgeColor[0], m.edgeColor[1], m.edgeColor[2]],
+          alpha: m.edgeColor[3],
+          visible: (m.flags & MaterialFlags.Edge) !== 0 && m.edgeSize > 0 && m.diffuse[3] > 0,
+        },
       };
-      return mat;
     });
+    const materials = this.materialsFor(this.options.displayPreset);
 
     // Bones: identity rest orientation, positions relative to parent.
     const solver = new PoseSolver(model.bones);
@@ -408,6 +428,31 @@ export class MmdViewer {
     this.needsRender = true;
   }
 
+  /** The model's materials for a display preset, built once and reused. */
+  private materialsFor(preset: DisplayPreset): THREE.Material[] {
+    let mats = this.presetMaterials.get(preset);
+    if (!mats) {
+      mats = this.materialSources.map((src) => createPresetMaterial(preset, src, { gradientMap: this.gradientMap }));
+      this.presetMaterials.set(preset, mats);
+    }
+    return mats;
+  }
+
+  private applyPresetLighting(): void {
+    const l = presetLighting(this.options.displayPreset);
+    this.hemiLight.intensity = l.hemisphere;
+    this.dirLight.intensity = l.directional;
+    if (l.environment && !this.environment) {
+      const pmrem = new THREE.PMREMGenerator(this.renderer);
+      this.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+      pmrem.dispose();
+    }
+    this.scene.environment = l.environment ? this.environment : null;
+    this.scene.environmentIntensity = 0.6;
+    this.renderer.toneMapping = l.toneMapping;
+    this.needsRender = true;
+  }
+
   private loadTexture(url: string, path: string): THREE.Texture {
     const ext = path.toLowerCase().split('.').pop() ?? '';
     const setup = (t: THREE.Texture) => {
@@ -433,13 +478,13 @@ export class MmdViewer {
     if (this.mesh) {
       this.scene.remove(this.mesh);
       this.mesh.geometry.dispose();
-      const mats = Array.isArray(this.mesh.material) ? this.mesh.material : [this.mesh.material];
-      for (const m of mats) {
-        (m as THREE.MeshToonMaterial).map?.dispose();
-        m.dispose();
-      }
       this.mesh.skeleton.dispose();
     }
+    for (const mats of this.presetMaterials.values()) for (const m of mats) m.dispose();
+    this.presetMaterials.clear();
+    this.materialSources = [];
+    for (const t of this.textures) t.dispose();
+    this.textures = [];
     if (this.skeletonHelper) {
       this.scene.remove(this.skeletonHelper);
       this.skeletonHelper.dispose();

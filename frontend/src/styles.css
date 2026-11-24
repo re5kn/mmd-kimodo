@@ -63,6 +63,9 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 .field { display: flex; flex-direction: column; gap: 3px; color: var(--muted); }
 .field select { font: inherit; padding: 4px; }
 .check { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.segmented { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; }
+.segmented button { padding: 4px 6px; }
+.segmented button.active { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 
 .info { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; margin: 2px 0 0; font-size: 12px; }
 .info dt { color: var(--muted); }
