@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { CLOTH_TILE, HAIR_TILE } from './detailMaps';
 import type { SurfaceKind } from './surfaceKind';
-import { createMmdMaterial } from './mmdShading';
+import { MMD_LIGHT_DIRECTION, createMmdMaterial } from './mmdShading';
 
 /**
  * Display presets (Issue #11 B1): the same model drawn with different
@@ -278,17 +278,26 @@ export interface PresetLighting {
   environment: number;
   toneMapping: THREE.ToneMapping;
   exposure: number;
+  /** Where the directional light comes from (it shines toward the origin). */
+  lightFrom: [number, number, number];
 }
+
+const DEFAULT_LIGHT_FROM: [number, number, number] = [-10, 30, 20];
 
 export function presetLighting(preset: DisplayPreset): PresetLighting {
   switch (preset) {
     case 'pbr':
     case 'clay':
-      return { hemisphere: 0.4, skyColor: 0xffffff, groundColor: 0x8899aa, directional: 2.2, environment: 0.6, toneMapping: THREE.NeutralToneMapping, exposure: 1 };
+      return { hemisphere: 0.4, skyColor: 0xffffff, groundColor: 0x8899aa, directional: 2.2, environment: 0.6, toneMapping: THREE.NeutralToneMapping, exposure: 1, lightFrom: DEFAULT_LIGHT_FROM };
     case 'real':
       // Strong key light, cool sky fill and filmic tone mapping.
-      return { hemisphere: 0.45, skyColor: 0xdde4ff, groundColor: 0x6e6964, directional: 2.6, environment: 0.35, toneMapping: THREE.ACESFilmicToneMapping, exposure: 1 };
+      return { hemisphere: 0.45, skyColor: 0xdde4ff, groundColor: 0x6e6964, directional: 2.6, environment: 0.35, toneMapping: THREE.ACESFilmicToneMapping, exposure: 1, lightFrom: DEFAULT_LIGHT_FROM };
+    case 'mmd': {
+      // The MMD shading uses only the light's direction: MMD's default one.
+      const [x, y, z] = MMD_LIGHT_DIRECTION;
+      return { hemisphere: 1.6, skyColor: 0xffffff, groundColor: 0x8899aa, directional: 1.8, environment: 0, toneMapping: THREE.NoToneMapping, exposure: 1, lightFrom: [-x * 20, -y * 20, -z * 20] };
+    }
     default:
-      return { hemisphere: 1.6, skyColor: 0xffffff, groundColor: 0x8899aa, directional: 1.8, environment: 0, toneMapping: THREE.NoToneMapping, exposure: 1 };
+      return { hemisphere: 1.6, skyColor: 0xffffff, groundColor: 0x8899aa, directional: 1.8, environment: 0, toneMapping: THREE.NoToneMapping, exposure: 1, lightFrom: DEFAULT_LIGHT_FROM };
   }
 }

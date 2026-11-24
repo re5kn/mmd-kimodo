@@ -119,7 +119,6 @@ export class MmdViewer {
     this.hemiLight = new THREE.HemisphereLight(0xffffff, 0x8899aa, 1.6);
     this.scene.add(this.hemiLight);
     this.dirLight = new THREE.DirectionalLight(0xffffff, 1.8);
-    this.dirLight.position.set(-10, 30, 20);
     this.scene.add(this.dirLight);
 
     this.grid = new THREE.Group();
@@ -494,6 +493,7 @@ export class MmdViewer {
     this.hemiLight.color.setHex(l.skyColor);
     this.hemiLight.groundColor.setHex(l.groundColor);
     this.dirLight.intensity = l.directional;
+    this.dirLight.position.set(...l.lightFrom);
     if (l.environment > 0 && !this.environment) {
       const pmrem = new THREE.PMREMGenerator(this.renderer);
       this.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;

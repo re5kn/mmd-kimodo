@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { describe, expect, test } from 'vitest';
-import { MMD_FINAL_COLOR_LINE, MMD_LIGHT_COLOR, SUB_UV_ATTRIBUTE, SphereMode, createMmdMaterial, type MmdShadingSource } from '../mmdShading';
-import { createPresetMaterial } from '../displayPresets';
+import { MMD_FINAL_COLOR_LINE, MMD_LIGHT_COLOR, MMD_LIGHT_DIRECTION, SUB_UV_ATTRIBUTE, SphereMode, createMmdMaterial, type MmdShadingSource } from '../mmdShading';
+import { createPresetMaterial, presetLighting } from '../displayPresets';
 
 const source = (over: Partial<MmdShadingSource> = {}): MmdShadingSource => ({
   diffuse: [0.8, 0.6, 0.4, 0.5],
@@ -64,6 +64,12 @@ describe('MMD shading', () => {
     const shader = compile(mat);
     expect(shader.vertexShader).toContain(`vMmdSubUv = ${SUB_UV_ATTRIBUTE};`);
     expect(shader.fragmentShader).toContain('varying vec2 vMmdSubUv;');
+  });
+
+  test("the MMD-style preset lights from MMD's default direction", () => {
+    const from = new THREE.Vector3(...presetLighting('mmd').lightFrom).normalize();
+    const dir = new THREE.Vector3(...MMD_LIGHT_DIRECTION).normalize();
+    expect(from.dot(dir)).toBeCloseTo(-1);
   });
 
   test('the MMD-style preset uses it', () => {
