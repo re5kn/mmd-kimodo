@@ -35,7 +35,9 @@ public sealed record GeometryDto(
     /// <summary>Float32 x4 per vertex.</summary>
     string SkinWeights,
     /// <summary>Uint32 x3 per triangle.</summary>
-    string Indices);
+    string Indices,
+    /// <summary>Float32 x2 per vertex: xy of the first additional UV (sphere sub-texture), or null when the model has none.</summary>
+    string? Uv1 = null);
 
 public sealed record MaterialDto(
     string Name,

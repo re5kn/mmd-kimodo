@@ -30,6 +30,8 @@ export interface GeometryDto {
   skinIndices: string;
   skinWeights: string;
   indices: string;
+  /** Float32 x2 per vertex: first additional UV (sphere sub-texture); null when the model has none. */
+  uv1?: string | null;
 }
 
 export interface MaterialDto {

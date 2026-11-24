@@ -22,6 +22,7 @@ import {
 import { createClothDetailMap, createHairDetailMap, uvDensity } from './detailMaps';
 import { classifySurfaces } from './surfaceKind';
 import { createSharedToonTextures, sharedToonIndexFromPath } from './sharedToons';
+import { SUB_UV_ATTRIBUTE, SphereMode } from './mmdShading';
 
 /**
  * PMX space is left-handed (model faces -Z). three.js is right-handed.
@@ -68,7 +69,6 @@ export class MmdViewer {
   private readonly controls: OrbitControls;
   private readonly grid: THREE.Group;
   private readonly resizeObserver: ResizeObserver;
-  private readonly gradientMap: THREE.DataTexture;
   /** Stand-ins for MMD's toon01..toon10 (index 0 = toon01). */
   private readonly sharedToons: THREE.DataTexture[];
   private readonly hemiLight: THREE.HemisphereLight;
@@ -119,7 +119,6 @@ export class MmdViewer {
     this.hemiLight = new THREE.HemisphereLight(0xffffff, 0x8899aa, 1.6);
     this.scene.add(this.hemiLight);
     this.dirLight = new THREE.DirectionalLight(0xffffff, 1.8);
-    this.dirLight.position.set(-10, 30, 20);
     this.scene.add(this.dirLight);
 
     this.grid = new THREE.Group();
@@ -131,11 +130,6 @@ export class MmdViewer {
     this.grid.add(axes);
     this.scene.add(this.grid);
 
-    // Two-tone ramp for materials without a toon texture.
-    const ramp = new Uint8Array([150, 150, 150, 255, 255, 255, 255, 255]);
-    this.gradientMap = new THREE.DataTexture(ramp, 2, 1, THREE.RGBAFormat);
-    this.gradientMap.minFilter = this.gradientMap.magFilter = THREE.NearestFilter;
-    this.gradientMap.needsUpdate = true;
     this.sharedToons = createSharedToonTextures();
 
     this.applyPresetLighting();
@@ -157,7 +151,6 @@ export class MmdViewer {
     this.physics?.dispose();
     this.physics = null;
     this.environment?.dispose();
-    this.gradientMap.dispose();
     for (const t of this.sharedToons) t.dispose();
     this.detailMaps?.cloth.dispose();
     this.detailMaps?.hair.dispose();
@@ -228,6 +221,8 @@ export class MmdViewer {
     geometry.setAttribute('position', posAttr);
     geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
     geometry.setAttribute('uv', new THREE.BufferAttribute(decodeFloat32(model.geometry.uvs), 2));
+    const hasSubUv = !!model.geometry.uv1;
+    if (model.geometry.uv1) geometry.setAttribute(SUB_UV_ATTRIBUTE, new THREE.BufferAttribute(decodeFloat32(model.geometry.uv1), 2));
     geometry.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(decodeUint16(model.geometry.skinIndices), 4));
     geometry.setAttribute('skinWeight', new THREE.BufferAttribute(decodeFloat32(model.geometry.skinWeights), 4));
     geometry.setIndex(new THREE.BufferAttribute(indices, 1));
@@ -264,6 +259,14 @@ export class MmdViewer {
       return tex;
     };
 
+    const sphereFor = (index: number, mode: number) => {
+      const map = index >= 0 ? textures[index] : null;
+      if (!map || mode === SphereMode.None || mode > SphereMode.SubTexture) return null;
+      // Sub-texture spheres need additional UV1; without it MMD shows nothing either.
+      if (mode === SphereMode.SubTexture && !hasSubUv) return null;
+      return { map, mode };
+    };
+
     const uvs = geometry.getAttribute('uv').array;
     const texturePath = (index: number) => (index >= 0 ? model.textures[index]?.path : undefined);
     const kinds = classifySurfaces(
@@ -278,9 +281,11 @@ export class MmdViewer {
         diffuse: [m.diffuse[0], m.diffuse[1], m.diffuse[2], m.diffuse[3]],
         ambient: [m.ambient[0], m.ambient[1], m.ambient[2]],
         specularity: m.specularity,
+        specular: [m.specular[0], m.specular[1], m.specular[2]],
         doubleSided: (m.flags & MaterialFlags.DoubleSided) !== 0,
         map: m.textureIndex >= 0 ? textures[m.textureIndex] ?? null : null,
         toon: toonFor(m.sharedToon, m.toonIndex),
+        sphere: sphereFor(m.sphereTextureIndex, m.sphereMode),
         outline: {
           thickness: m.edgeSize / 300,
           color: [m.edgeColor[0], m.edgeColor[1], m.edgeColor[2]],
@@ -475,7 +480,7 @@ export class MmdViewer {
       if (preset === 'real' && !this.detailMaps) {
         this.detailMaps = { cloth: createClothDetailMap(), hair: createHairDetailMap() };
       }
-      const shared = { gradientMap: this.gradientMap, detailMaps: this.detailMaps ?? undefined };
+      const shared = { detailMaps: this.detailMaps ?? undefined };
       mats = this.materialSources.map((src) => createPresetMaterial(preset, src, shared));
       this.presetMaterials.set(preset, mats);
     }
@@ -488,6 +493,7 @@ export class MmdViewer {
     this.hemiLight.color.setHex(l.skyColor);
     this.hemiLight.groundColor.setHex(l.groundColor);
     this.dirLight.intensity = l.directional;
+    this.dirLight.position.set(...l.lightFrom);
     if (l.environment > 0 && !this.environment) {
       const pmrem = new THREE.PMREMGenerator(this.renderer);
       this.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
