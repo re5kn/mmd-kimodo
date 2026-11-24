@@ -43,6 +43,13 @@ describe('MMD shading', () => {
     expect(u.mmdLightColor.value).toBeCloseTo(MMD_LIGHT_COLOR);
   });
 
+  test('has a self-shadow path that darkens toward the toon bottom color', () => {
+    const frag = compile(createMmdMaterial(source(), {})).fragmentShader;
+    expect(frag).toContain('min( clamp( mmdNL * 3.0, 0.0, 1.0 ), mmdLit )');
+    expect(frag).toContain('vec2( 0.0, 1.0 )');
+    expect(frag).toContain('directionalShadowMap[ 0 ]');
+  });
+
   test('uses the toon as its gradient map, or none (white) without one', () => {
     const toon = new THREE.DataTexture();
     expect(createMmdMaterial(source({ toon }), {}).gradientMap).toBe(toon);
