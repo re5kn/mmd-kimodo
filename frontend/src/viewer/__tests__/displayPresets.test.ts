@@ -27,7 +27,7 @@ describe('display presets', () => {
       expect(mat.opacity).toBe(0.5);
       expect(mat.transparent).toBe(true);
       expect(mat.side).toBe(THREE.DoubleSide);
-      expect(mat.userData.outlineParameters).toMatchObject({ thickness: 0.003, visible: true });
+      expect(mat.userData.outlineParameters).toMatchObject({ visible: true, alpha: 1 });
       expect((mat as THREE.MeshBasicMaterial).map).toBe(tex);
     }
   });
@@ -59,5 +59,31 @@ describe('display presets', () => {
     expect(specularityToRoughness(5)).toBeGreaterThan(specularityToRoughness(50));
     expect(specularityToRoughness(0)).toBe(1);
     expect(specularityToRoughness(100000)).toBe(0.2);
+  });
+});
+
+describe('real preset', () => {
+  const detailMaps = { cloth: new THREE.DataTexture(), hair: new THREE.DataTexture() };
+  const real = (kind: PresetMaterialSource['kind'], uvDensity = 0) =>
+    createPresetMaterial('real', { ...source(new THREE.Texture()), kind, uvDensity }, { ...shared, detailMaps });
+
+  test('picks a surface per material kind', () => {
+    expect(real('decal')).toBeInstanceOf(THREE.MeshBasicMaterial);
+    const hair = real('hair') as THREE.MeshPhysicalMaterial;
+    expect(hair.anisotropy).toBeGreaterThan(0);
+    const cloth = real('cloth') as THREE.MeshPhysicalMaterial;
+    expect(cloth.sheen).toBeGreaterThan(0);
+    expect((real('metal') as THREE.MeshPhysicalMaterial).metalness).toBeGreaterThan(0.5);
+  });
+
+  test('tiles the detail map by the UV density', () => {
+    const cloth = real('cloth', 12) as THREE.MeshPhysicalMaterial;
+    expect(cloth.normalMap).not.toBeNull();
+    expect(cloth.normalMap!.repeat.x).toBeCloseTo(12 / 0.6);
+    expect(real('cloth', 0) as THREE.MeshPhysicalMaterial).toHaveProperty('normalMap', null);
+  });
+
+  test('draws thinner outlines', () => {
+    expect(real('cloth').userData.outlineParameters.thickness).toBeCloseTo(0.0015);
   });
 });
