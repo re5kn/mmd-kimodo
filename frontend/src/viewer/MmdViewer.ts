@@ -21,6 +21,7 @@ import {
 } from './displayPresets';
 import { createClothDetailMap, createHairDetailMap, uvDensity } from './detailMaps';
 import { classifySurfaces } from './surfaceKind';
+import { createSharedToonTextures } from './sharedToons';
 
 /**
  * PMX space is left-handed (model faces -Z). three.js is right-handed.
@@ -68,6 +69,8 @@ export class MmdViewer {
   private readonly grid: THREE.Group;
   private readonly resizeObserver: ResizeObserver;
   private readonly gradientMap: THREE.DataTexture;
+  /** Stand-ins for MMD's toon01..toon10 (index 0 = toon01). */
+  private readonly sharedToons: THREE.DataTexture[];
   private readonly hemiLight: THREE.HemisphereLight;
   private readonly dirLight: THREE.DirectionalLight;
   private environment: THREE.Texture | null = null;
@@ -128,11 +131,12 @@ export class MmdViewer {
     this.grid.add(axes);
     this.scene.add(this.grid);
 
-    // Simple two-tone ramp for toon shading (shared toon textures are not bundled).
+    // Two-tone ramp for materials without a toon texture.
     const ramp = new Uint8Array([150, 150, 150, 255, 255, 255, 255, 255]);
     this.gradientMap = new THREE.DataTexture(ramp, 2, 1, THREE.RGBAFormat);
     this.gradientMap.minFilter = this.gradientMap.magFilter = THREE.NearestFilter;
     this.gradientMap.needsUpdate = true;
+    this.sharedToons = createSharedToonTextures();
 
     this.applyPresetLighting();
 
@@ -154,6 +158,7 @@ export class MmdViewer {
     this.physics = null;
     this.environment?.dispose();
     this.gradientMap.dispose();
+    for (const t of this.sharedToons) t.dispose();
     this.detailMaps?.cloth.dispose();
     this.detailMaps?.hair.dispose();
     this.controls.dispose();
@@ -253,6 +258,7 @@ export class MmdViewer {
         specularity: m.specularity,
         doubleSided: (m.flags & MaterialFlags.DoubleSided) !== 0,
         map: m.textureIndex >= 0 ? textures[m.textureIndex] ?? null : null,
+        toon: m.sharedToon ? this.sharedToons[m.toonIndex] ?? null : null,
         outline: {
           thickness: m.edgeSize / 300,
           color: [m.edgeColor[0], m.edgeColor[1], m.edgeColor[2]],
