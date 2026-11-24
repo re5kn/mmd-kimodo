@@ -21,7 +21,7 @@ import {
 } from './displayPresets';
 import { createClothDetailMap, createHairDetailMap, uvDensity } from './detailMaps';
 import { classifySurfaces } from './surfaceKind';
-import { createSharedToonTextures } from './sharedToons';
+import { createSharedToonTextures, sharedToonIndexFromPath } from './sharedToons';
 
 /**
  * PMX space is left-handed (model faces -Z). three.js is right-handed.
@@ -235,12 +235,34 @@ export class MmdViewer {
     const missingTextures: string[] = [];
     const textures = model.textures.map((t) => {
       if (!t.url) {
-        missingTextures.push(t.path);
+        // MMD's toon01..toon10 are expected to be missing; stand-ins are used.
+        if (sharedToonIndexFromPath(t.path) === null) missingTextures.push(t.path);
         return null;
       }
       return this.loadTexture(t.url, t.path);
     });
     this.textures = textures.filter((t): t is THREE.Texture => !!t);
+
+    // Toon images of the model itself are read with clamping (a separate
+    // texture object, since the same file may also be used as a color map).
+    const toonTextures = new Map<number, THREE.Texture>();
+    const toonFor = (shared: boolean, index: number): THREE.Texture | null => {
+      if (shared) return this.sharedToons[index] ?? null;
+      const entry = index >= 0 ? model.textures[index] : undefined;
+      if (!entry) return null;
+      if (!entry.url) {
+        // A missing "toon03.bmp" means MMD's own file: use its stand-in.
+        const sharedIndex = sharedToonIndexFromPath(entry.path);
+        return sharedIndex === null ? null : this.sharedToons[sharedIndex];
+      }
+      let tex = toonTextures.get(index);
+      if (!tex) {
+        tex = this.loadTexture(entry.url, entry.path, THREE.ClampToEdgeWrapping);
+        toonTextures.set(index, tex);
+        this.textures.push(tex);
+      }
+      return tex;
+    };
 
     const uvs = geometry.getAttribute('uv').array;
     const texturePath = (index: number) => (index >= 0 ? model.textures[index]?.path : undefined);
@@ -258,7 +280,7 @@ export class MmdViewer {
         specularity: m.specularity,
         doubleSided: (m.flags & MaterialFlags.DoubleSided) !== 0,
         map: m.textureIndex >= 0 ? textures[m.textureIndex] ?? null : null,
-        toon: m.sharedToon ? this.sharedToons[m.toonIndex] ?? null : null,
+        toon: toonFor(m.sharedToon, m.toonIndex),
         outline: {
           thickness: m.edgeSize / 300,
           color: [m.edgeColor[0], m.edgeColor[1], m.edgeColor[2]],
@@ -478,12 +500,12 @@ export class MmdViewer {
     this.needsRender = true;
   }
 
-  private loadTexture(url: string, path: string): THREE.Texture {
+  private loadTexture(url: string, path: string, wrap: THREE.Wrapping = THREE.RepeatWrapping): THREE.Texture {
     const ext = path.toLowerCase().split('.').pop() ?? '';
     const setup = (t: THREE.Texture) => {
       t.flipY = false; // PMX UVs use a top-left origin
       t.colorSpace = THREE.SRGBColorSpace;
-      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.wrapS = t.wrapT = wrap;
     };
     const onLoad = (t: THREE.Texture) => {
       setup(t);
