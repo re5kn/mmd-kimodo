@@ -23,6 +23,7 @@ import { createClothDetailMap, createHairDetailMap, uvDensity } from './detailMa
 import { classifySurfaces } from './surfaceKind';
 import { createSharedToonTextures, sharedToonIndexFromPath } from './sharedToons';
 import { SUB_UV_ATTRIBUTE, SphereMode } from './mmdShading';
+import { ShadowRig, shadowBounds } from './shadows';
 
 /**
  * PMX space is left-handed (model faces -Z). three.js is right-handed.
@@ -41,6 +42,7 @@ export interface ViewerOptions {
   physicsEngine: PhysicsEngineKind;
   showRigidBodies: boolean;
   displayPreset: DisplayPreset;
+  showShadows: boolean;
 }
 
 export const DEFAULT_VIEWER_OPTIONS: ViewerOptions = {
@@ -52,6 +54,7 @@ export const DEFAULT_VIEWER_OPTIONS: ViewerOptions = {
   physicsEngine: 'ammo',
   showRigidBodies: false,
   displayPreset: 'mmd',
+  showShadows: true,
 };
 
 /** Frame jumps larger than this (or backwards) restart the simulation. */
@@ -73,6 +76,9 @@ export class MmdViewer {
   private readonly sharedToons: THREE.DataTexture[];
   private readonly hemiLight: THREE.HemisphereLight;
   private readonly dirLight: THREE.DirectionalLight;
+  private readonly shadows: ShadowRig;
+  private readonly shadowSphere = new THREE.Sphere();
+  private bonePoints: THREE.Vector3[] = [];
   private environment: THREE.Texture | null = null;
   private detailMaps: { cloth: THREE.Texture; hair: THREE.Texture } | null = null;
 
@@ -120,6 +126,7 @@ export class MmdViewer {
     this.scene.add(this.hemiLight);
     this.dirLight = new THREE.DirectionalLight(0xffffff, 1.8);
     this.scene.add(this.dirLight);
+    this.shadows = new ShadowRig(this.renderer, this.dirLight, this.scene);
 
     this.grid = new THREE.Group();
     const grid = new THREE.GridHelper(100, 20, 0x9aa3ad, 0xd0d5db);
@@ -154,6 +161,7 @@ export class MmdViewer {
     for (const t of this.sharedToons) t.dispose();
     this.detailMaps?.cloth.dispose();
     this.detailMaps?.hair.dispose();
+    this.shadows.dispose();
     this.controls.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
@@ -184,6 +192,7 @@ export class MmdViewer {
     this.options = { ...this.options, ...opts };
     const o = this.options;
     this.grid.visible = o.showGrid;
+    this.shadows.setEnabled(o.showShadows);
     if (this.skeletonHelper) this.skeletonHelper.visible = o.showBones;
     if (this.rigidBodyHelper) this.rigidBodyHelper.visible = o.showRigidBodies;
     if (o.displayPreset !== prev.displayPreset) {
@@ -312,11 +321,14 @@ export class MmdViewer {
 
     const mesh = new THREE.SkinnedMesh(geometry, materials.length > 0 ? materials : new THREE.MeshToonMaterial());
     mesh.frustumCulled = false;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
     roots.forEach((r) => mesh.add(r));
     mesh.updateMatrixWorld(true);
     mesh.bind(new THREE.Skeleton(this.bones));
     this.scene.add(mesh);
     this.mesh = mesh;
+    this.bonePoints = this.bones.map(() => new THREE.Vector3());
     this.solver = solver;
 
     this.skeletonHelper = new THREE.SkeletonHelper(mesh);
@@ -493,7 +505,7 @@ export class MmdViewer {
     this.hemiLight.color.setHex(l.skyColor);
     this.hemiLight.groundColor.setHex(l.groundColor);
     this.dirLight.intensity = l.directional;
-    this.dirLight.position.set(...l.lightFrom);
+    this.shadows.setDirection(new THREE.Vector3(...l.lightFrom));
     if (l.environment > 0 && !this.environment) {
       const pmrem = new THREE.PMREMGenerator(this.renderer);
       this.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -554,6 +566,7 @@ export class MmdViewer {
     this.solver = null;
     this.morphs = null;
     this.bones = [];
+    this.bonePoints = [];
     this.needsRender = true;
   }
 
@@ -566,6 +579,14 @@ export class MmdViewer {
     this.needsRender = true;
   }
 
+  /** Keeps the shadow camera around the posed model. */
+  private fitShadows(): void {
+    if (!this.mesh) return;
+    this.mesh.updateMatrixWorld();
+    this.bones.forEach((b, i) => b.getWorldPosition(this.bonePoints[i]));
+    this.shadows.fit(shadowBounds(this.bonePoints, this.shadowSphere));
+  }
+
   private loop = () => {
     if (this.disposed) return;
     requestAnimationFrame(this.loop);
@@ -575,6 +596,7 @@ export class MmdViewer {
     if (this.physicsActive()) this.applyFrame(dt);
     if (!this.needsRender) return;
     this.needsRender = false;
+    if (this.options.showShadows) this.fitShadows();
     if (this.options.showOutline) this.outline.render(this.scene, this.camera);
     else this.renderer.render(this.scene, this.camera);
   };

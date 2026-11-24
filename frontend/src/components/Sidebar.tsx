@@ -170,6 +170,9 @@ export function Sidebar(p: Props) {
           <input type="checkbox" checked={p.options.showOutline} onChange={(e) => p.onOptions({ showOutline: e.target.checked })} /> 輪郭線
         </label>
         <label className="check">
+          <input type="checkbox" checked={p.options.showShadows} onChange={(e) => p.onOptions({ showShadows: e.target.checked })} /> 影
+        </label>
+        <label className="check">
           <input type="checkbox" checked={p.options.enableIk} onChange={(e) => p.onOptions({ enableIk: e.target.checked })} /> IK
         </label>
         <button onClick={p.onResetCamera}>カメラリセット</button>
