@@ -19,6 +19,8 @@ import {
   type DisplayPreset,
   type PresetMaterialSource,
 } from './displayPresets';
+import { createClothDetailMap, createHairDetailMap, uvDensity } from './detailMaps';
+import { classifySurfaces } from './surfaceKind';
 
 /**
  * PMX space is left-handed (model faces -Z). three.js is right-handed.
@@ -69,6 +71,7 @@ export class MmdViewer {
   private readonly hemiLight: THREE.HemisphereLight;
   private readonly dirLight: THREE.DirectionalLight;
   private environment: THREE.Texture | null = null;
+  private detailMaps: { cloth: THREE.Texture; hair: THREE.Texture } | null = null;
 
   private model: ModelDto | null = null;
   private mesh: THREE.SkinnedMesh | null = null;
@@ -151,6 +154,8 @@ export class MmdViewer {
     this.physics = null;
     this.environment?.dispose();
     this.gradientMap.dispose();
+    this.detailMaps?.cloth.dispose();
+    this.detailMaps?.hair.dispose();
     this.controls.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
@@ -232,9 +237,16 @@ export class MmdViewer {
     });
     this.textures = textures.filter((t): t is THREE.Texture => !!t);
 
+    const uvs = geometry.getAttribute('uv').array;
+    const texturePath = (index: number) => (index >= 0 ? model.textures[index]?.path : undefined);
+    const kinds = classifySurfaces(
+      model.materials.map((m) => ({ name: m.name, texturePaths: [texturePath(m.textureIndex), texturePath(m.sphereTextureIndex)] })),
+    );
     this.materialSources = model.materials.map((m, i) => {
       geometry.addGroup(m.indexStart, m.indexCount, i);
       return {
+        kind: kinds[i],
+        uvDensity: uvDensity(positions, uvs, indices, m.indexStart, m.indexCount),
         name: m.name,
         diffuse: [m.diffuse[0], m.diffuse[1], m.diffuse[2], m.diffuse[3]],
         ambient: [m.ambient[0], m.ambient[1], m.ambient[2]],
@@ -432,7 +444,11 @@ export class MmdViewer {
   private materialsFor(preset: DisplayPreset): THREE.Material[] {
     let mats = this.presetMaterials.get(preset);
     if (!mats) {
-      mats = this.materialSources.map((src) => createPresetMaterial(preset, src, { gradientMap: this.gradientMap }));
+      if (preset === 'real' && !this.detailMaps) {
+        this.detailMaps = { cloth: createClothDetailMap(), hair: createHairDetailMap() };
+      }
+      const shared = { gradientMap: this.gradientMap, detailMaps: this.detailMaps ?? undefined };
+      mats = this.materialSources.map((src) => createPresetMaterial(preset, src, shared));
       this.presetMaterials.set(preset, mats);
     }
     return mats;
@@ -441,15 +457,18 @@ export class MmdViewer {
   private applyPresetLighting(): void {
     const l = presetLighting(this.options.displayPreset);
     this.hemiLight.intensity = l.hemisphere;
+    this.hemiLight.color.setHex(l.skyColor);
+    this.hemiLight.groundColor.setHex(l.groundColor);
     this.dirLight.intensity = l.directional;
-    if (l.environment && !this.environment) {
+    if (l.environment > 0 && !this.environment) {
       const pmrem = new THREE.PMREMGenerator(this.renderer);
       this.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
       pmrem.dispose();
     }
-    this.scene.environment = l.environment ? this.environment : null;
-    this.scene.environmentIntensity = 0.6;
+    this.scene.environment = l.environment > 0 ? this.environment : null;
+    this.scene.environmentIntensity = l.environment;
     this.renderer.toneMapping = l.toneMapping;
+    this.renderer.toneMappingExposure = l.exposure;
     this.needsRender = true;
   }
 
