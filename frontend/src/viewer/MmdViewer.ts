@@ -68,7 +68,6 @@ export class MmdViewer {
   private readonly controls: OrbitControls;
   private readonly grid: THREE.Group;
   private readonly resizeObserver: ResizeObserver;
-  private readonly gradientMap: THREE.DataTexture;
   /** Stand-ins for MMD's toon01..toon10 (index 0 = toon01). */
   private readonly sharedToons: THREE.DataTexture[];
   private readonly hemiLight: THREE.HemisphereLight;
@@ -131,11 +130,6 @@ export class MmdViewer {
     this.grid.add(axes);
     this.scene.add(this.grid);
 
-    // Two-tone ramp for materials without a toon texture.
-    const ramp = new Uint8Array([150, 150, 150, 255, 255, 255, 255, 255]);
-    this.gradientMap = new THREE.DataTexture(ramp, 2, 1, THREE.RGBAFormat);
-    this.gradientMap.minFilter = this.gradientMap.magFilter = THREE.NearestFilter;
-    this.gradientMap.needsUpdate = true;
     this.sharedToons = createSharedToonTextures();
 
     this.applyPresetLighting();
@@ -157,7 +151,6 @@ export class MmdViewer {
     this.physics?.dispose();
     this.physics = null;
     this.environment?.dispose();
-    this.gradientMap.dispose();
     for (const t of this.sharedToons) t.dispose();
     this.detailMaps?.cloth.dispose();
     this.detailMaps?.hair.dispose();
@@ -278,6 +271,7 @@ export class MmdViewer {
         diffuse: [m.diffuse[0], m.diffuse[1], m.diffuse[2], m.diffuse[3]],
         ambient: [m.ambient[0], m.ambient[1], m.ambient[2]],
         specularity: m.specularity,
+        specular: [m.specular[0], m.specular[1], m.specular[2]],
         doubleSided: (m.flags & MaterialFlags.DoubleSided) !== 0,
         map: m.textureIndex >= 0 ? textures[m.textureIndex] ?? null : null,
         toon: toonFor(m.sharedToon, m.toonIndex),
@@ -475,7 +469,7 @@ export class MmdViewer {
       if (preset === 'real' && !this.detailMaps) {
         this.detailMaps = { cloth: createClothDetailMap(), hair: createHairDetailMap() };
       }
-      const shared = { gradientMap: this.gradientMap, detailMaps: this.detailMaps ?? undefined };
+      const shared = { detailMaps: this.detailMaps ?? undefined };
       mats = this.materialSources.map((src) => createPresetMaterial(preset, src, shared));
       this.presetMaterials.set(preset, mats);
     }
