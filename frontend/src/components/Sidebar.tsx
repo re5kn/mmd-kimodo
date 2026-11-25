@@ -6,6 +6,7 @@ import type { ViewerOptions } from '../viewer/MmdViewer';
 import { DISPLAY_PRESETS } from '../viewer/displayPresets';
 import { EffectsSection } from './EffectsSection';
 import { LightingSection } from './LightingSection';
+import { LightingTunerSection } from './LightingTunerSection';
 import { PhysicsSection } from './PhysicsSection';
 
 interface Props {
@@ -181,6 +182,8 @@ export function Sidebar(p: Props) {
       </section>
 
       <LightingSection options={p.options} onOptions={p.onOptions} />
+      {/* Temporary: remove with LightingTunerSection.tsx and viewer/lightingTuner.ts. */}
+      <LightingTunerSection options={p.options} />
       <EffectsSection options={p.options} onOptions={p.onOptions} />
 
       <PhysicsSection model={m} options={p.options} onOptions={p.onOptions} />
