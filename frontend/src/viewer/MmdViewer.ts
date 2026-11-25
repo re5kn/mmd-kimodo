@@ -24,6 +24,7 @@ import { classifySurfaces } from './surfaceKind';
 import { createSharedToonTextures, sharedToonIndexFromPath } from './sharedToons';
 import { SUB_UV_ATTRIBUTE, SphereMode, createMmdLightUniform } from './mmdShading';
 import { DEFAULT_LIGHTING, resolveLighting, type LightingSettings } from './lighting';
+import { DEFAULT_EFFECTS, PostEffects, effectsActive, resolveToneMapping, type EffectSettings } from './postEffects';
 import { ShadowRig, shadowBounds } from './shadows';
 
 /**
@@ -45,6 +46,7 @@ export interface ViewerOptions {
   displayPreset: DisplayPreset;
   showShadows: boolean;
   lighting: LightingSettings;
+  effects: EffectSettings;
 }
 
 export const DEFAULT_VIEWER_OPTIONS: ViewerOptions = {
@@ -58,6 +60,7 @@ export const DEFAULT_VIEWER_OPTIONS: ViewerOptions = {
   displayPreset: 'mmd',
   showShadows: true,
   lighting: DEFAULT_LIGHTING,
+  effects: DEFAULT_EFFECTS,
 };
 
 /** Frame jumps larger than this (or backwards) restart the simulation. */
@@ -80,6 +83,7 @@ export class MmdViewer {
   private readonly hemiLight: THREE.HemisphereLight;
   private readonly dirLight: THREE.DirectionalLight;
   private readonly shadows: ShadowRig;
+  private readonly post: PostEffects;
   /** Fill and rim lights of the three-point setup. */
   private readonly extraLights: THREE.DirectionalLight[];
   private readonly mmdLightColor = createMmdLightUniform();
@@ -133,6 +137,7 @@ export class MmdViewer {
     this.dirLight = new THREE.DirectionalLight(0xffffff, 1.8);
     this.scene.add(this.dirLight);
     this.shadows = new ShadowRig(this.renderer, this.dirLight, this.scene);
+    this.post = new PostEffects(this.renderer, this.scene, this.camera, this.outline);
     this.extraLights = [new THREE.DirectionalLight(), new THREE.DirectionalLight()];
     for (const light of this.extraLights) {
       light.visible = false;
@@ -173,6 +178,7 @@ export class MmdViewer {
     this.detailMaps?.cloth.dispose();
     this.detailMaps?.hair.dispose();
     this.shadows.dispose();
+    this.post.dispose();
     this.controls.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
@@ -206,7 +212,7 @@ export class MmdViewer {
     this.shadows.setEnabled(o.showShadows);
     if (this.skeletonHelper) this.skeletonHelper.visible = o.showBones;
     if (this.rigidBodyHelper) this.rigidBodyHelper.visible = o.showRigidBodies;
-    if (o.lighting !== prev.lighting && o.displayPreset === prev.displayPreset) this.applyPresetLighting();
+    if ((o.lighting !== prev.lighting || o.effects !== prev.effects) && o.displayPreset === prev.displayPreset) this.applyPresetLighting();
     if (o.displayPreset !== prev.displayPreset) {
       this.applyPresetLighting();
       if (this.mesh) this.mesh.material = this.materialsFor(o.displayPreset);
@@ -537,7 +543,7 @@ export class MmdViewer {
     }
     this.scene.environment = l.environment > 0 ? this.environment : null;
     this.scene.environmentIntensity = l.environment;
-    this.renderer.toneMapping = l.toneMapping;
+    this.renderer.toneMapping = resolveToneMapping(this.options.effects.toneMapping, l.toneMapping);
     this.renderer.toneMappingExposure = l.exposure;
     this.needsRender = true;
   }
@@ -598,6 +604,7 @@ export class MmdViewer {
     const w = Math.max(this.container.clientWidth, 1);
     const h = Math.max(this.container.clientHeight, 1);
     this.renderer.setSize(w, h);
+    this.post.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.needsRender = true;
@@ -621,7 +628,10 @@ export class MmdViewer {
     if (!this.needsRender) return;
     this.needsRender = false;
     if (this.options.showShadows) this.fitShadows();
-    if (this.options.showOutline) this.outline.render(this.scene, this.camera);
+    if (effectsActive(this.options.effects)) {
+      const focus = this.camera.position.distanceTo(this.controls.target);
+      this.post.render(this.options.effects, { outline: this.options.showOutline, focus });
+    } else if (this.options.showOutline) this.outline.render(this.scene, this.camera);
     else this.renderer.render(this.scene, this.camera);
   };
 }

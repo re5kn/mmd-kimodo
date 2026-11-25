@@ -4,6 +4,7 @@ import { clipEnd, clipLength, type MotionClip } from '../mmd/clips';
 import type { BoundMotion } from '../mmd/motion';
 import type { ViewerOptions } from '../viewer/MmdViewer';
 import { DISPLAY_PRESETS } from '../viewer/displayPresets';
+import { EffectsSection } from './EffectsSection';
 import { LightingSection } from './LightingSection';
 import { PhysicsSection } from './PhysicsSection';
 
@@ -180,6 +181,7 @@ export function Sidebar(p: Props) {
       </section>
 
       <LightingSection options={p.options} onOptions={p.onOptions} />
+      <EffectsSection options={p.options} onOptions={p.onOptions} />
 
       <PhysicsSection model={m} options={p.options} onOptions={p.onOptions} />
 
