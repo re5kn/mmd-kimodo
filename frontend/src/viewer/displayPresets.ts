@@ -290,8 +290,8 @@ function createRealMaterial(src: PresetMaterialSource, shared: PresetShared): TH
 export const FIGURE_FINISH: Record<Exclude<SurfaceKind, 'decal'>, { roughness: number; clearcoat: number; clearcoatRoughness: number; specular: number }> = {
   // Hair: glossier than the rest, but a soft sheen rather than a wet shine.
   hair: { roughness: 0.5, clearcoat: 0.3, clearcoatRoughness: 0.3, specular: 0.25 },
-  // Skin: smooth satin plastic, a soft sheen rather than a shine.
-  skin: { roughness: 0.45, clearcoat: 0.25, clearcoatRoughness: 0.35, specular: 0.3 },
+  // Skin: matte paint, no coat; only the shading shows.
+  skin: { roughness: 0.75, clearcoat: 0, clearcoatRoughness: 0.5, specular: 0.2 },
   // Clothes: semi-gloss paint.
   cloth: { roughness: 0.6, clearcoat: 0.2, clearcoatRoughness: 0.4, specular: 0.3 },
   metal: { roughness: 0.25, clearcoat: 1, clearcoatRoughness: 0.05, specular: 1 },
@@ -302,7 +302,7 @@ export const FIGURE_SKIN_GLOW: [number, number, number] = [0.05, 0.03, 0.025];
 
 /**
  * 'figure' preset: the model as a painted PVC figure. Every surface is
- * smooth (no detail maps) and lacquered, glossier for hair than for skin;
+ * smooth (no detail maps); hair, clothes and metal are lacquered, skin is matte;
  * printed parts such as eyes keep their drawn colors under a clear coat.
  */
 function createFigureMaterial(src: PresetMaterialSource): THREE.Material {
