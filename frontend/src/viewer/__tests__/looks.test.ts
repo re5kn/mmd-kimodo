@@ -27,4 +27,10 @@ describe('looks', () => {
     const keys = new Set(LOOKS.map((l) => JSON.stringify(l.effects)));
     expect(keys.size).toBe(LOOKS.length);
   });
+
+  test('figure photo blurs strongly, like a close-up of a small model', () => {
+    const fx = LOOKS.find((l) => l.kind === 'figurePhoto')!.effects;
+    expect(fx.dof.enabled).toBe(true);
+    expect(fx.dof.strength).toBeGreaterThan(LOOKS.find((l) => l.kind === 'cinema')!.effects.dof.strength);
+  });
 });
