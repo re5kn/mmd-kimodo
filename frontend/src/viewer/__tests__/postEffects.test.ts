@@ -1,7 +1,17 @@
 import * as THREE from 'three';
 import { describe, expect, test } from 'vitest';
 import { BokehShader } from 'three/addons/shaders/BokehShader.js';
-import { BOKEH_OPAQUE_LINE, DEFAULT_EFFECTS, dofAperture, dofMaxBlur, effectsActive, resolveToneMapping } from '../postEffects';
+import {
+  BOKEH_OPAQUE_LINE,
+  DEFAULT_EFFECTS,
+  NEUTRAL_GRADE,
+  dofAperture,
+  dofMaxBlur,
+  effectsActive,
+  gradeActive,
+  resolveToneMapping,
+  warmthGain,
+} from '../postEffects';
 
 describe('post effects', () => {
   test('nothing runs through the chain by default', () => {
@@ -45,5 +55,19 @@ describe('post effects', () => {
 
   test("three.js's bokeh shader still has the line that drops coverage", () => {
     expect(BokehShader.fragmentShader).toContain(BOKEH_OPAQUE_LINE);
+  });
+
+  test('color grading turns the chain on only when it changes something', () => {
+    expect(gradeActive(NEUTRAL_GRADE)).toBe(false);
+    expect(gradeActive({ ...NEUTRAL_GRADE, saturation: 1.3 })).toBe(true);
+    expect(effectsActive({ ...DEFAULT_EFFECTS, grade: { ...NEUTRAL_GRADE, vignette: 0.4 } })).toBe(true);
+  });
+
+  test('warmth tilts red against blue and leaves green', () => {
+    const [r, g, b] = warmthGain(1);
+    expect(r).toBeGreaterThan(1);
+    expect(g).toBe(1);
+    expect(b).toBeLessThan(1);
+    expect(warmthGain(0)).toEqual([1, 1, 1]);
   });
 });

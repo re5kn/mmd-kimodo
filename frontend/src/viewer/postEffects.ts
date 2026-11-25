@@ -13,7 +13,7 @@ import type { OutlineEffect } from 'three/addons/effects/OutlineEffect.js';
  * Post-processing (Issue #11 C3): effects applied to the rendered image,
  * each switchable on its own.
  *
- *   scene (+ outlines) → depth of field → bloom → tone mapping / sRGB → SMAA
+ *   scene (+ outlines) → depth of field → bloom → grading / tone mapping / sRGB → SMAA
  *
  * The scene is rendered into a linear HDR buffer, so bloom sees values above
  * 1 and tone mapping happens once, at the end. The background color is left
@@ -24,11 +24,40 @@ import type { OutlineEffect } from 'three/addons/effects/OutlineEffect.js';
  */
 export type ToneMappingChoice = 'auto' | 'none' | 'neutral' | 'aces' | 'agx';
 
+/**
+ * Color grading (Issue #11 C4), applied to the model in linear light before
+ * tone mapping; the background keeps its color. Neutral values change nothing.
+ */
+export interface ColorGrade {
+  /** 1 = as is, 0 = gray. */
+  saturation: number;
+  /** 1 = as is; pivots around middle gray (0.18 linear). */
+  contrast: number;
+  /** Exposure multiplier, 1 = as is. */
+  brightness: number;
+  /** −1 cool … 0 … +1 warm. */
+  warmth: number;
+  /** Darkening toward the corners of the whole image, 0-1. */
+  vignette: number;
+}
+
+export const NEUTRAL_GRADE: ColorGrade = { saturation: 1, contrast: 1, brightness: 1, warmth: 0, vignette: 0 };
+
+export function gradeActive(g: ColorGrade): boolean {
+  return (Object.keys(NEUTRAL_GRADE) as (keyof ColorGrade)[]).some((k) => Math.abs(g[k] - NEUTRAL_GRADE[k]) > 1e-3);
+}
+
+/** Warmth as RGB gains (the shader's copy is in FINAL_FRAGMENT). */
+export function warmthGain(warmth: number): [number, number, number] {
+  return [1 + 0.12 * warmth, 1, 1 - 0.12 * warmth];
+}
+
 export interface EffectSettings {
   bloom: { enabled: boolean; strength: number; radius: number; threshold: number };
   /** Depth of field, focused on the orbit target (the model). */
   dof: { enabled: boolean; strength: number };
   smaa: boolean;
+  grade: ColorGrade;
   /** 'auto' keeps the display preset's tone mapping. */
   toneMapping: ToneMappingChoice;
 }
@@ -39,6 +68,7 @@ export const DEFAULT_EFFECTS: EffectSettings = {
   bloom: { enabled: false, strength: 0.5, radius: 0.5, threshold: 0.95 },
   dof: { enabled: false, strength: 0.5 },
   smaa: false,
+  grade: NEUTRAL_GRADE,
   toneMapping: 'auto',
 };
 
@@ -57,7 +87,7 @@ export function resolveToneMapping(choice: ToneMappingChoice, presetDefault: THR
 
 /** Whether any effect needs the post-processing chain. */
 export function effectsActive(s: EffectSettings): boolean {
-  return s.bloom.enabled || s.dof.enabled || s.smaa;
+  return s.bloom.enabled || s.dof.enabled || s.smaa || gradeActive(s.grade);
 }
 
 /**
@@ -135,7 +165,8 @@ class SceneCopyPass extends Pass {
  * blended over the background in display space, as when rendering straight
  * to the screen. Bloom's glow G (image minus the copy before bloom) is
  * light added on top: over the model it joins the model's color, over the
- * background it is added like a screen blend.
+ * background it is added like a screen blend. Color grading (C4) applies
+ * to the model's own color; the vignette darkens the finished image.
  */
 export const FINAL_FRAGMENT = /* glsl */ `
   precision highp float;
@@ -143,6 +174,11 @@ export const FINAL_FRAGMENT = /* glsl */ `
   uniform sampler2D tScene;
   uniform bool useScene;
   uniform vec3 background;
+  uniform float saturation;
+  uniform float contrast;
+  uniform float brightness;
+  uniform float warmth;
+  uniform float vignette;
   #include <tonemapping_pars_fragment>
   #include <colorspace_pars_fragment>
   varying vec2 vUv;
@@ -169,14 +205,24 @@ export const FINAL_FRAGMENT = /* glsl */ `
     return c;
   }
 
+  vec3 grade( vec3 c ) {
+    c *= brightness * vec3( 1.0 + 0.12 * warmth, 1.0, 1.0 - 0.12 * warmth );
+    c = 0.18 * pow( max( c, 0.0 ) / 0.18, vec3( contrast ) );
+    float l = dot( c, vec3( 0.2126, 0.7152, 0.0722 ) );
+    return max( mix( vec3( l ), c, saturation ), 0.0 );
+  }
+
   void main() {
     vec4 image = texture2D( tDiffuse, vUv );
     vec4 scene = useScene ? texture2D( tScene, vUv ) : image;
     vec3 glow = max( image.rgb - scene.rgb, 0.0 );
     float a = clamp( scene.a, 0.0, 1.0 );
-    vec3 own = a > 0.0 ? toDisplay( scene.rgb / a + glow ) : vec3( 0.0 );
+    vec3 own = a > 0.0 ? toDisplay( grade( scene.rgb / a ) + glow ) : vec3( 0.0 );
     vec3 under = background + ( useScene ? toDisplay( glow ) : vec3( 0.0 ) );
-    gl_FragColor = vec4( own * a + under * ( 1.0 - a ), 1.0 );
+    vec3 color = own * a + under * ( 1.0 - a );
+    vec2 d = ( vUv - 0.5 ) * 1.4142;
+    color *= 1.0 - vignette * smoothstep( 0.35, 1.0, dot( d, d ) );
+    gl_FragColor = vec4( color, 1.0 );
   }`;
 
 class FinalPass extends OutputPass {
@@ -186,6 +232,11 @@ class FinalPass extends OutputPass {
       tScene: { value: null },
       useScene: { value: false },
       background: { value: new THREE.Color() },
+      saturation: { value: 1 },
+      contrast: { value: 1 },
+      brightness: { value: 1 },
+      warmth: { value: 0 },
+      vignette: { value: 0 },
     });
     this.material.fragmentShader = FINAL_FRAGMENT;
   }
@@ -264,6 +315,7 @@ export class PostEffects {
     this.sceneCopy.enabled = s.bloom.enabled;
     this.final.uniforms.useScene.value = s.bloom.enabled;
     this.final.uniforms.tScene.value = this.sceneCopy.target.texture;
+    for (const k of Object.keys(NEUTRAL_GRADE) as (keyof ColorGrade)[]) this.final.uniforms[k].value = s.grade[k];
     const bg = this.scene.background instanceof THREE.Color ? this.scene.background : null;
     const bgUniform = this.final.uniforms.background.value as THREE.Color;
     if (bg) bg.getRGB(bgUniform, THREE.SRGBColorSpace);
