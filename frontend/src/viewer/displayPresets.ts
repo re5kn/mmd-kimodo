@@ -289,16 +289,16 @@ function createRealMaterial(src: PresetMaterialSource, shared: PresetShared): TH
  */
 export const FIGURE_FINISH: Record<Exclude<SurfaceKind, 'decal'>, { roughness: number; clearcoat: number; clearcoatRoughness: number; specular: number }> = {
   // Hair: glossier than the rest, but a soft sheen rather than a wet shine.
-  hair: { roughness: 0.5, clearcoat: 0.4, clearcoatRoughness: 0.3, specular: 0.4 },
+  hair: { roughness: 0.5, clearcoat: 0.3, clearcoatRoughness: 0.3, specular: 0.25 },
   // Skin: smooth satin plastic, a soft sheen rather than a shine.
-  skin: { roughness: 0.45, clearcoat: 0.35, clearcoatRoughness: 0.35, specular: 0.35 },
+  skin: { roughness: 0.45, clearcoat: 0.25, clearcoatRoughness: 0.35, specular: 0.3 },
   // Clothes: semi-gloss paint.
-  cloth: { roughness: 0.6, clearcoat: 0.3, clearcoatRoughness: 0.4, specular: 0.35 },
+  cloth: { roughness: 0.6, clearcoat: 0.2, clearcoatRoughness: 0.4, specular: 0.3 },
   metal: { roughness: 0.25, clearcoat: 1, clearcoatRoughness: 0.05, specular: 1 },
 };
 
 /** Warm translucency of PVC skin: light that enters lifts the shadow side (multiplied by the texture). */
-export const FIGURE_SKIN_GLOW: [number, number, number] = [0.12, 0.07, 0.06];
+export const FIGURE_SKIN_GLOW: [number, number, number] = [0.05, 0.03, 0.025];
 
 /**
  * 'figure' preset: the model as a painted PVC figure. Every surface is
@@ -358,8 +358,8 @@ export function presetLighting(preset: DisplayPreset): PresetLighting {
       // Strong key light, cool sky fill and filmic tone mapping.
       return { hemisphere: 0.45, skyColor: 0xdde4ff, groundColor: 0x6e6964, directional: 2.6, environment: 0.35, toneMapping: THREE.ACESFilmicToneMapping, exposure: 1, lightFrom: DEFAULT_LIGHT_FROM };
     case 'figure':
-      // Bright, even studio light; the room reflections show on the clear coat.
-      return { hemisphere: 0.6, skyColor: 0xffffff, groundColor: 0x9a9690, directional: 2, environment: 0.9, toneMapping: THREE.NeutralToneMapping, exposure: 1, lightFrom: DEFAULT_LIGHT_FROM };
+      // Even studio light; the room reflections stay faint so colors are not washed out.
+      return { hemisphere: 0.5, skyColor: 0xffffff, groundColor: 0x9a9690, directional: 2.1, environment: 0.35, toneMapping: THREE.NeutralToneMapping, exposure: 1, lightFrom: DEFAULT_LIGHT_FROM };
     case 'mmd': {
       // The MMD shading uses only the light's direction: MMD's default one.
       const [x, y, z] = MMD_LIGHT_DIRECTION;
