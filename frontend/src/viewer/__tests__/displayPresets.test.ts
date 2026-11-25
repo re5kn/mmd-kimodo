@@ -3,6 +3,7 @@ import { describe, expect, test } from 'vitest';
 import {
   CLAY_COLOR,
   DISPLAY_PRESETS,
+  FIGURE_FINISH,
   SKIN,
   SKIN_SCATTER_LINE,
   createPresetMaterial,
@@ -29,7 +30,7 @@ describe('display presets', () => {
       expect(mat.opacity).toBe(0.5);
       expect(mat.transparent).toBe(true);
       expect(mat.side).toBe(THREE.DoubleSide);
-      expect(mat.userData.outlineParameters).toMatchObject({ visible: true, alpha: 1 });
+      expect(mat.userData.outlineParameters).toMatchObject({ visible: kind !== 'figure', alpha: 1 });
       expect((mat as THREE.MeshBasicMaterial).map).toBe(tex);
     }
   });
@@ -102,5 +103,34 @@ describe('real preset', () => {
 
   test('draws thinner outlines', () => {
     expect(real('cloth').userData.outlineParameters.thickness).toBeCloseTo(0.0015);
+  });
+});
+
+describe('figure preset', () => {
+  const figure = (kind: PresetMaterialSource['kind'], map: THREE.Texture | null = new THREE.Texture()) =>
+    createPresetMaterial('figure', { ...source(map), kind }, shared) as THREE.MeshPhysicalMaterial;
+
+  test('every surface is lacquered and smooth, hair the glossiest', () => {
+    for (const kind of ['hair', 'skin', 'cloth', 'metal'] as const) {
+      const mat = figure(kind);
+      expect(mat).toBeInstanceOf(THREE.MeshPhysicalMaterial);
+      expect(mat.clearcoat).toBeGreaterThan(0);
+      expect(mat.normalMap).toBeNull();
+    }
+    expect(FIGURE_FINISH.hair.clearcoatRoughness).toBeLessThan(FIGURE_FINISH.skin.clearcoatRoughness);
+    expect(FIGURE_FINISH.hair.roughness).toBeLessThan(FIGURE_FINISH.cloth.roughness);
+  });
+
+  test('printed parts keep their drawn colors under the coat', () => {
+    const tex = new THREE.Texture();
+    const eye = figure('decal', tex);
+    expect(eye.color.getHex()).toBe(0);
+    expect(eye.emissiveMap).toBe(tex);
+    expect(eye.emissive.getHex()).toBe(0xffffff);
+    expect(eye.map).toBe(tex);
+  });
+
+  test('figures have no outlines', () => {
+    expect(figure('cloth').userData.outlineParameters.visible).toBe(false);
   });
 });

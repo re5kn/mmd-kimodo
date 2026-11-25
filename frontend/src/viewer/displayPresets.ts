@@ -7,7 +7,7 @@ import { MMD_LIGHT_DIRECTION, createMmdMaterial, type MmdLightUniform } from './
  * Display presets (Issue #11 B1): the same model drawn with different
  * material sets, switched with one click.
  */
-export type DisplayPreset = 'mmd' | 'flat' | 'pbr' | 'clay' | 'real';
+export type DisplayPreset = 'mmd' | 'flat' | 'pbr' | 'clay' | 'real' | 'figure';
 
 export const DISPLAY_PRESETS: { kind: DisplayPreset; label: string; description: string }[] = [
   { kind: 'mmd', label: 'MMD 風', description: 'MMD 本体と同じ式（材質色・トゥーン・スフィア・反射）。共有トゥーンは自作の代替' },
@@ -18,6 +18,11 @@ export const DISPLAY_PRESETS: { kind: DisplayPreset; label: string; description:
     kind: 'real',
     label: 'リアル調',
     description: '材質名から髪・服・肌を見分け、布目や毛筋の細かい凹凸と光沢を加える（ray-mmd などのエフェクト風）',
+  },
+  {
+    kind: 'figure',
+    label: 'フィギュア',
+    description: 'PVC フィギュアのような、つやのある塗装の質感（髪は光沢、肌はなめらか、輪郭線なし）',
   },
 ];
 
@@ -144,10 +149,17 @@ export function createPresetMaterial(preset: DisplayPreset, src: PresetMaterialS
     case 'real':
       mat = createRealMaterial(src, shared);
       break;
+    case 'figure':
+      mat = createFigureMaterial(src);
+      break;
   }
-  // Effect stacks usually draw thinner lines than plain MMD.
+  // Effect stacks usually draw thinner lines than plain MMD; figures have none.
   const outlineScale = preset === 'real' ? 0.5 : 1;
-  mat.userData.outlineParameters = { ...src.outline, thickness: src.outline.thickness * outlineScale };
+  mat.userData.outlineParameters = {
+    ...src.outline,
+    thickness: src.outline.thickness * outlineScale,
+    visible: src.outline.visible && preset !== 'figure',
+  };
   return mat;
 }
 
@@ -271,6 +283,56 @@ function createRealMaterial(src: PresetMaterialSource, shared: PresetShared): TH
   return mat;
 }
 
+/**
+ * 'figure' preset finish per material kind: painted PVC under a clear coat.
+ * Roughness / clear coat (amount, roughness) / specular strength.
+ */
+export const FIGURE_FINISH: Record<Exclude<SurfaceKind, 'decal'>, { roughness: number; clearcoat: number; clearcoatRoughness: number; specular: number }> = {
+  // Hair: high gloss, crisp highlights.
+  hair: { roughness: 0.35, clearcoat: 1, clearcoatRoughness: 0.08, specular: 0.6 },
+  // Skin: smooth satin plastic, a soft sheen rather than a shine.
+  skin: { roughness: 0.45, clearcoat: 0.35, clearcoatRoughness: 0.35, specular: 0.35 },
+  // Clothes: semi-gloss paint.
+  cloth: { roughness: 0.6, clearcoat: 0.3, clearcoatRoughness: 0.4, specular: 0.35 },
+  metal: { roughness: 0.25, clearcoat: 1, clearcoatRoughness: 0.05, specular: 1 },
+};
+
+/** Warm translucency of PVC skin: light that enters lifts the shadow side (multiplied by the texture). */
+export const FIGURE_SKIN_GLOW: [number, number, number] = [0.12, 0.07, 0.06];
+
+/**
+ * 'figure' preset: the model as a painted PVC figure. Every surface is
+ * smooth (no detail maps) and lacquered, glossier for hair than for skin;
+ * printed parts such as eyes keep their drawn colors under a clear coat.
+ */
+function createFigureMaterial(src: PresetMaterialSource): THREE.Material {
+  const [r, g, b] = src.diffuse;
+  const kind = src.kind ?? 'cloth';
+  const mat = new THREE.MeshPhysicalMaterial({ ...common(src), color: srgb(r, g, b), map: src.map, metalness: 0 });
+  if (kind === 'decal') {
+    // Printed eyes and marks: color as drawn (lit by itself), glossy coat on top.
+    mat.color.setRGB(0, 0, 0);
+    mat.emissive.set(src.map ? 0xffffff : srgb(r, g, b));
+    mat.emissiveMap = src.map;
+    mat.roughness = 1;
+    mat.specularIntensity = 0;
+    mat.clearcoat = 1;
+    mat.clearcoatRoughness = 0.05;
+    return mat;
+  }
+  const f = FIGURE_FINISH[kind];
+  mat.roughness = f.roughness;
+  mat.clearcoat = f.clearcoat;
+  mat.clearcoatRoughness = f.clearcoatRoughness;
+  mat.specularIntensity = f.specular;
+  if (kind === 'metal') mat.metalness = 0.8;
+  if (kind === 'skin') {
+    mat.emissiveMap = src.map;
+    mat.emissive.setRGB(...FIGURE_SKIN_GLOW);
+  }
+  return mat;
+}
+
 /** Scene lighting for a preset (flat ignores lights entirely). */
 export interface PresetLighting {
   hemisphere: number;
@@ -295,6 +357,9 @@ export function presetLighting(preset: DisplayPreset): PresetLighting {
     case 'real':
       // Strong key light, cool sky fill and filmic tone mapping.
       return { hemisphere: 0.45, skyColor: 0xdde4ff, groundColor: 0x6e6964, directional: 2.6, environment: 0.35, toneMapping: THREE.ACESFilmicToneMapping, exposure: 1, lightFrom: DEFAULT_LIGHT_FROM };
+    case 'figure':
+      // Bright, even studio light; the room reflections show on the clear coat.
+      return { hemisphere: 0.6, skyColor: 0xffffff, groundColor: 0x9a9690, directional: 2, environment: 0.9, toneMapping: THREE.NeutralToneMapping, exposure: 1, lightFrom: DEFAULT_LIGHT_FROM };
     case 'mmd': {
       // The MMD shading uses only the light's direction: MMD's default one.
       const [x, y, z] = MMD_LIGHT_DIRECTION;
