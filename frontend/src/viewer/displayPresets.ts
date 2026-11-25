@@ -288,8 +288,8 @@ function createRealMaterial(src: PresetMaterialSource, shared: PresetShared): TH
  * Roughness / clear coat (amount, roughness) / specular strength.
  */
 export const FIGURE_FINISH: Record<Exclude<SurfaceKind, 'decal'>, { roughness: number; clearcoat: number; clearcoatRoughness: number; specular: number }> = {
-  // Hair: high gloss, crisp highlights.
-  hair: { roughness: 0.35, clearcoat: 1, clearcoatRoughness: 0.08, specular: 0.6 },
+  // Hair: glossier than the rest, but a soft sheen rather than a wet shine.
+  hair: { roughness: 0.5, clearcoat: 0.4, clearcoatRoughness: 0.3, specular: 0.4 },
   // Skin: smooth satin plastic, a soft sheen rather than a shine.
   skin: { roughness: 0.45, clearcoat: 0.35, clearcoatRoughness: 0.35, specular: 0.35 },
   // Clothes: semi-gloss paint.
