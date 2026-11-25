@@ -15,10 +15,10 @@ import { RigidBodyHelper } from './RigidBodyHelper';
 import { physicsStatusStore } from './physicsStatus';
 import {
   createPresetMaterial,
-  presetLighting,
   type DisplayPreset,
   type PresetMaterialSource,
 } from './displayPresets';
+import { lightingTunerStore, tunedPresetLighting } from './lightingTuner';
 import { createClothDetailMap, createHairDetailMap, uvDensity } from './detailMaps';
 import { classifySurfaces } from './surfaceKind';
 import { createSharedToonTextures, sharedToonIndexFromPath } from './sharedToons';
@@ -116,6 +116,8 @@ export class MmdViewer {
   private rigidBodyHelper: RigidBodyHelper | null = null;
   private lastTick = 0;
   private readonly unsubscribeReset: () => void;
+  /** Temporary lighting tuner (see lightingTuner.ts). */
+  private readonly unsubscribeTuner: () => void;
 
   options: ViewerOptions = { ...DEFAULT_VIEWER_OPTIONS };
 
@@ -162,6 +164,7 @@ export class MmdViewer {
     this.resize();
     this.loop();
     this.unsubscribeReset = physicsStatusStore.onResetRequest(() => this.resetPhysics());
+    this.unsubscribeTuner = lightingTunerStore.subscribe(() => this.applyPresetLighting());
     void this.syncPhysicsEngine();
   }
 
@@ -169,6 +172,7 @@ export class MmdViewer {
     this.disposed = true;
     this.resizeObserver.disconnect();
     this.unsubscribeReset();
+    this.unsubscribeTuner();
     this.clearModel();
     this.physicsRequest++;
     this.physics?.dispose();
@@ -518,7 +522,7 @@ export class MmdViewer {
   }
 
   private applyPresetLighting(): void {
-    const l = presetLighting(this.options.displayPreset);
+    const l = tunedPresetLighting(this.options.displayPreset);
     this.hemiLight.intensity = l.hemisphere;
     this.hemiLight.color.setHex(l.skyColor);
     this.hemiLight.groundColor.setHex(l.groundColor);
