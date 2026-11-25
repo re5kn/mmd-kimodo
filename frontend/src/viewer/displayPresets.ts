@@ -358,8 +358,9 @@ export function presetLighting(preset: DisplayPreset): PresetLighting {
       // Strong key light, cool sky fill and filmic tone mapping.
       return { hemisphere: 0.45, skyColor: 0xdde4ff, groundColor: 0x6e6964, directional: 2.6, environment: 0.35, toneMapping: THREE.ACESFilmicToneMapping, exposure: 1, lightFrom: DEFAULT_LIGHT_FROM };
     case 'figure':
-      // Even studio light; the room reflections stay faint so colors are not washed out.
-      return { hemisphere: 0.5, skyColor: 0xffffff, groundColor: 0x9a9690, directional: 2.1, environment: 0.35, toneMapping: THREE.NeutralToneMapping, exposure: 1, lightFrom: DEFAULT_LIGHT_FROM };
+      // Soft light-box look (hand-tuned): strong fill for a key:fill of about 3:1, and
+      // lowered exposure so highlights stay below Neutral's roll-off and keep their color.
+      return { hemisphere: 0.8, skyColor: 0xffffff, groundColor: 0x9a9690, directional: 2.5, environment: 0.5, toneMapping: THREE.NeutralToneMapping, exposure: 0.8, lightFrom: DEFAULT_LIGHT_FROM };
     case 'mmd': {
       // The MMD shading uses only the light's direction: MMD's default one.
       const [x, y, z] = MMD_LIGHT_DIRECTION;
