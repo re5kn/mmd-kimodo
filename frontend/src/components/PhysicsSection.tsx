@@ -55,6 +55,15 @@ export function PhysicsSection({ model, options, onOptions }: Props) {
         />{' '}
         剛体を表示
       </label>
+      <label className="check" title="モデルが動いていない間は物理演算を止めて、揺れ物の微動をなくす">
+        <input
+          type="checkbox"
+          checked={options.freezePhysicsWhenStill}
+          disabled={!options.enablePhysics}
+          onChange={(e) => onOptions({ freezePhysicsWhenStill: e.target.checked })}
+        />{' '}
+        静止中は止める
+      </label>
       <button onClick={physicsStatusStore.requestReset} title="現在の姿勢から物理演算をやり直す" disabled={!options.enablePhysics || bodies === 0}>
         物理リセット
       </button>
@@ -62,6 +71,12 @@ export function PhysicsSection({ model, options, onOptions }: Props) {
         <dl className="info">
           <dt>剛体 / ジョイント</dt>
           <dd>{bodies} / {joints}</dd>
+          {options.enablePhysics && options.freezePhysicsWhenStill && (
+            <>
+              <dt>状態</dt>
+              <dd>{status.frozen ? '静止中（停止）' : '計算中'}</dd>
+            </>
+          )}
         </dl>
       )}
       {message && <p className={status.state === 'error' ? 'physics-note error' : 'physics-note'}>{message}</p>}
