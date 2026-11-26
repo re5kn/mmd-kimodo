@@ -224,6 +224,45 @@ function tiledDetail(base: THREE.Texture, uvDensity: number, across: number, alo
 }
 
 /**
+ * Color grading built into the 'real' preset: the same values as the
+ * 色鮮やか look (looks.ts), so the vivid colors show without post effects.
+ * Choosing 色鮮やか as well applies the grading twice.
+ */
+export const REAL_GRADE = { saturation: 1.35, contrast: 1.12, brightness: 1.03 };
+
+/** Shader line the grading is inserted before (linear color, before tone mapping). */
+export const GRADE_ANCHOR = '#include <tonemapping_fragment>';
+
+/**
+ * Grades a material's final color in linear light just before tone mapping,
+ * with the same formula as the post-effects grading (FINAL_FRAGMENT):
+ * brightness, contrast around middle gray 0.18, then saturation.
+ */
+function useBuiltInGrade(mat: THREE.Material, g: typeof REAL_GRADE): void {
+  const previous = mat.onBeforeCompile.bind(mat);
+  const previousKey = mat.customProgramCacheKey.bind(mat);
+  const f = (v: number) => v.toFixed(4);
+  mat.onBeforeCompile = (shader, renderer) => {
+    previous(shader, renderer);
+    if (!shader.fragmentShader.includes(GRADE_ANCHOR)) {
+      console.warn('real preset grading: three.js shader changed; colors are not graded');
+      return;
+    }
+    shader.fragmentShader = shader.fragmentShader.replace(
+      GRADE_ANCHOR,
+      `{
+    vec3 gradeC = max( gl_FragColor.rgb * ${f(g.brightness)}, 0.0 );
+    gradeC = 0.18 * pow( gradeC / 0.18, vec3( ${f(g.contrast)} ) );
+    float gradeL = dot( gradeC, vec3( 0.2126, 0.7152, 0.0722 ) );
+    gl_FragColor.rgb = max( mix( vec3( gradeL ), gradeC, ${f(g.saturation)} ), 0.0 );
+  }
+  ${GRADE_ANCHOR}`,
+    );
+  };
+  mat.customProgramCacheKey = () => `${previousKey()}-real-grade`;
+}
+
+/**
  * 'real' preset: physically based surfaces chosen per material kind, in the
  * spirit of MMD effect stacks such as ray-mmd (fabric sheen and weave,
  * anisotropic hair highlights, soft skin).
@@ -234,7 +273,9 @@ function createRealMaterial(src: PresetMaterialSource, shared: PresetShared): TH
   const color = srgb(r, g, b);
   if (kind === 'decal') {
     // Eyes and painted overlays stay exactly as drawn.
-    return new THREE.MeshBasicMaterial({ ...common(src), color, map: src.map, toneMapped: false });
+    const decal = new THREE.MeshBasicMaterial({ ...common(src), color, map: src.map, toneMapped: false });
+    useBuiltInGrade(decal, REAL_GRADE);
+    return decal;
   }
   const mat = new THREE.MeshPhysicalMaterial({ ...common(src), color, map: src.map, metalness: 0 });
   let detail: THREE.Texture | null = null;
@@ -255,10 +296,7 @@ function createRealMaterial(src: PresetMaterialSource, shared: PresetShared): TH
       // Highlights stretch across the strands (U), like a band around the head.
       mat.anisotropy = 0.6;
       mat.anisotropyRotation = 0;
-      // Soft lilac-white sheen lifts dark hair the way effect stacks do.
-      mat.sheen = 0.6;
-      mat.sheenRoughness = 0.55;
-      mat.sheenColor.setRGB(0.85, 0.8, 0.95);
+      // No sheen: a whitish sheen veils dark hair and washes its color out.
       if (shared.detailMaps) detail = tiledDetail(shared.detailMaps.hair, src.uvDensity ?? 0, HAIR_TILE.across, HAIR_TILE.along);
       mat.normalScale.set(0.15, 0.15);
       break;
@@ -280,6 +318,7 @@ function createRealMaterial(src: PresetMaterialSource, shared: PresetShared): TH
     mat.normalMap = detail;
     mat.addEventListener('dispose', () => detail.dispose());
   }
+  useBuiltInGrade(mat, REAL_GRADE);
   return mat;
 }
 
@@ -355,8 +394,9 @@ export function presetLighting(preset: DisplayPreset): PresetLighting {
     case 'clay':
       return { hemisphere: 0.4, skyColor: 0xffffff, groundColor: 0x8899aa, directional: 2.2, environment: 0.6, toneMapping: THREE.NeutralToneMapping, exposure: 1, lightFrom: DEFAULT_LIGHT_FROM };
     case 'real':
-      // Strong key light, cool sky fill and filmic tone mapping.
-      return { hemisphere: 0.45, skyColor: 0xdde4ff, groundColor: 0x6e6964, directional: 2.6, environment: 0.35, toneMapping: THREE.ACESFilmicToneMapping, exposure: 1, lightFrom: DEFAULT_LIGHT_FROM };
+      // Strong key light, cool sky fill and filmic tone mapping (hand-tuned: the
+      // light is raised and exposure lowered so highlights keep their color).
+      return { hemisphere: 0.6, skyColor: 0xdde4ff, groundColor: 0x6e6964, directional: 4.2, environment: 0.5, toneMapping: THREE.ACESFilmicToneMapping, exposure: 0.5, lightFrom: DEFAULT_LIGHT_FROM };
     case 'figure':
       // Soft light-box look (hand-tuned): strong fill for a key:fill of about 3:1, and
       // lowered exposure so highlights stay below Neutral's roll-off and keep their color.
