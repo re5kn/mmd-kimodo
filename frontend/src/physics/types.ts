@@ -4,6 +4,14 @@ import type { BoneDto, JointDto, RigidBodyDto } from '../api/types';
 /** Physics engines that can be selected in the settings. */
 export type PhysicsEngineKind = 'ammo' | 'rapier';
 
+/**
+ * Simulation accuracy. 'high' solves joints more finely (finer steps and
+ * softer limit correction in Ammo.js, more solver iterations in Rapier): hair
+ * and skirts jitter less at rest and stretch less while moving, for about 2-4
+ * times as much time per frame.
+ */
+export type PhysicsQuality = 'standard' | 'high';
+
 /** Input for {@link PhysicsEngine.setup}: the parts of a PMX model physics needs. */
 export interface PhysicsModel {
   bones: readonly BoneDto[];
@@ -34,6 +42,9 @@ export interface PhysicsEngine {
 
   /** Moves every body to its place on the given pose and clears velocities. */
   reset(boneWorld: readonly Matrix4[]): void;
+
+  /** Changes the accuracy; keeps the current state (no reset needed). */
+  setQuality(quality: PhysicsQuality): void;
 
   /** 1ステップ進める (seconds of simulated time; split into fixed sub-steps). */
   step(dt: number): void;

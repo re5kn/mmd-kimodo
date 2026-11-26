@@ -1,6 +1,12 @@
-import type { PhysicsEngine, PhysicsEngineInfo, PhysicsEngineKind } from './types';
+import type { PhysicsEngine, PhysicsEngineInfo, PhysicsEngineKind, PhysicsQuality } from './types';
 
-export type { PhysicsEngine, PhysicsEngineInfo, PhysicsEngineKind, PhysicsModel } from './types';
+export type { PhysicsEngine, PhysicsEngineInfo, PhysicsEngineKind, PhysicsModel, PhysicsQuality } from './types';
+
+/** Accuracy choices shown in the settings. */
+export const PHYSICS_QUALITIES: readonly { quality: PhysicsQuality; label: string }[] = [
+  { quality: 'standard', label: '標準' },
+  { quality: 'high', label: '高（重い）' },
+];
 
 /** Engines shown in the settings. */
 export const PHYSICS_ENGINES: readonly PhysicsEngineInfo[] = [

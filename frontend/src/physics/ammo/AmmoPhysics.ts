@@ -1,7 +1,7 @@
 import { Matrix4, Quaternion, Vector3 } from 'three';
 import { RigidBodyMode, RigidBodyShape } from '../../api/types';
 import { PhysicsRig } from '../rig';
-import type { PhysicsEngine, PhysicsModel } from '../types';
+import type { PhysicsEngine, PhysicsModel, PhysicsQuality } from '../types';
 import { loadAmmo, type AmmoModule } from './loadAmmo';
 
 type Ammo = AmmoModule;
@@ -10,9 +10,20 @@ type BtTransform = InstanceType<Ammo['btTransform']>;
 
 /** MMD's gravity: 9.8 m/s² with 1 unit = 10 cm. */
 const GRAVITY = -9.8 * 10;
-/** Fixed simulation step and the most sub-steps per call. */
-const FIXED_STEP = 1 / 120;
-const MAX_SUB_STEPS = 8;
+/**
+ * Per quality: fixed simulation step, the most sub-steps per call (at most
+ * 1/15 s per frame) and the fraction of a joint limit violation corrected per
+ * step (stop ERP).
+ *
+ * Standard keeps the 0.475 of three.js' former MMDPhysics: joints stay tight
+ * while moving, but bodies resting on a limit overshoot and jitter (Issue #25).
+ * High uses Bullet's default 0.2 with half the step, which both jitters less
+ * and stretches less than standard.
+ */
+const STEPS: Record<PhysicsQuality, { fixedStep: number; maxSubSteps: number; limitErp: number }> = {
+  standard: { fixedStep: 1 / 120, maxSubSteps: 8, limitErp: 0.475 },
+  high: { fixedStep: 1 / 240, maxSubSteps: 16, limitErp: 0.2 },
+};
 /** Simulated time used to settle bodies after reset(). */
 const WARMUP_STEPS = 30;
 const WARMUP_DT = 1 / 60;
@@ -54,6 +65,7 @@ export class AmmoPhysics implements PhysicsEngine {
   private readonly zero;
 
   private rig: PhysicsRig | null = null;
+  private steps = STEPS.standard;
   private bodies: Body[] = [];
   private constraints: InstanceType<Ammo['btGeneric6DofSpringConstraint']>[] = [];
   /** Ammo objects owned by the current model, destroyed on teardown. */
@@ -131,11 +143,10 @@ export class AmmoPhysics implements PhysicsEngine {
           c.setStiffness(k + 3, joint.springAngular[k]);
         }
       }
-      // Softer limit correction, as in three.js' former MMDPhysics.
-      for (let k = 0; k < 6; k++) c.setParam(BT_CONSTRAINT_STOP_ERP, 0.475, k);
       this.world.addConstraint(c, true);
       this.constraints.push(c);
     }
+    this.applyLimitErp();
   }
 
   setBoneTransforms(boneWorld: readonly Matrix4[]): void {
@@ -171,9 +182,21 @@ export class AmmoPhysics implements PhysicsEngine {
     for (let k = 0; k < WARMUP_STEPS; k++) this.world.stepSimulation(WARMUP_DT, 1, WARMUP_DT);
   }
 
+  setQuality(quality: PhysicsQuality): void {
+    this.steps = STEPS[quality];
+    this.applyLimitErp();
+  }
+
+  private applyLimitErp(): void {
+    for (const c of this.constraints) {
+      for (let k = 0; k < 6; k++) c.setParam(BT_CONSTRAINT_STOP_ERP, this.steps.limitErp, k);
+    }
+  }
+
   step(dt: number): void {
     if (!this.rig || dt <= 0) return;
-    this.world.stepSimulation(Math.min(dt, MAX_SUB_STEPS * FIXED_STEP), MAX_SUB_STEPS, FIXED_STEP);
+    const { fixedStep, maxSubSteps } = this.steps;
+    this.world.stepSimulation(Math.min(dt, maxSubSteps * fixedStep), maxSubSteps, fixedStep);
   }
 
   getBoneTransforms(out: Matrix4[]): void {

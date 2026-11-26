@@ -2,7 +2,7 @@ import { Matrix4, Quaternion, Vector3 } from 'three';
 import type { ColliderDesc, ImpulseJoint, RigidBody, World } from '@dimforge/rapier3d-compat';
 import { RigidBodyMode, RigidBodyShape, type JointDto } from '../../api/types';
 import { PhysicsRig } from '../rig';
-import type { PhysicsEngine, PhysicsModel } from '../types';
+import type { PhysicsEngine, PhysicsModel, PhysicsQuality } from '../types';
 import { loadRapier, type RapierModule } from './loadRapier';
 
 /** MMD scale: 1 unit = 10 cm. */
@@ -11,6 +11,8 @@ const UNITS_PER_METRE = 10;
 const GRAVITY = -9.8 * UNITS_PER_METRE;
 const FIXED_STEP = 1 / 120;
 const MAX_SUB_STEPS = 8;
+/** Solver iterations (Rapier's default is 4). */
+const SOLVER_ITERATIONS: Record<PhysicsQuality, number> = { standard: 4, high: 16 };
 /** Settling after reset(): same as Ammo.js (30 steps of 1/60 s), coarser than FIXED_STEP to keep a seek cheap. */
 const WARMUP_STEPS = 15;
 const WARMUP_DT = 1 / 30;
@@ -49,6 +51,7 @@ export class RapierPhysics implements PhysicsEngine {
   private rig: PhysicsRig | null = null;
   private bodies: Body[] = [];
   private accumulator = 0;
+  private quality: PhysicsQuality = 'standard';
 
   private readonly m = new Matrix4();
   private readonly p = new Vector3();
@@ -65,6 +68,7 @@ export class RapierPhysics implements PhysicsEngine {
     world.timestep = FIXED_STEP;
     // Tolerances (allowed penetration, prediction distance) scale with this; MMD models are ~10 units per metre.
     world.lengthUnit = UNITS_PER_METRE;
+    world.numSolverIterations = SOLVER_ITERATIONS[this.quality];
     this.world = world;
     this.rig = rig;
     this.boneModes = rig.boneModes;
@@ -131,6 +135,11 @@ export class RapierPhysics implements PhysicsEngine {
     world.timestep = WARMUP_DT;
     for (let k = 0; k < WARMUP_STEPS; k++) world.step();
     world.timestep = FIXED_STEP;
+  }
+
+  setQuality(quality: PhysicsQuality): void {
+    this.quality = quality;
+    if (this.world) this.world.numSolverIterations = SOLVER_ITERATIONS[quality];
   }
 
   step(dt: number): void {
