@@ -1,8 +1,11 @@
 import * as THREE from 'three';
 import { describe, expect, test } from 'vitest';
+import { LOOKS } from '../looks';
 import {
   CLAY_COLOR,
   DISPLAY_PRESETS,
+  GRADE_ANCHOR,
+  REAL_GRADE,
   FIGURE_FINISH,
   SKIN,
   SKIN_SCATTER_LINE,
@@ -132,5 +135,44 @@ describe('figure preset', () => {
 
   test('figures have no outlines', () => {
     expect(figure('cloth').userData.outlineParameters.visible).toBe(false);
+  });
+});
+
+describe('real preset grading', () => {
+  const real = (kind: PresetMaterialSource['kind']) =>
+    createPresetMaterial('real', { ...source(new THREE.Texture()), kind }, shared);
+  const compile = (mat: THREE.Material) => {
+    const shader = {
+      uniforms: {},
+      vertexShader: '',
+      fragmentShader: `#include <lights_physical_pars_fragment>\nmain\n${GRADE_ANCHOR}\nend`,
+    } as unknown as THREE.WebGLProgramParametersWithUniforms;
+    mat.onBeforeCompile(shader, null as unknown as THREE.WebGLRenderer);
+    return shader;
+  };
+
+  test('uses the same values as the vivid look', () => {
+    const vivid = LOOKS.find((l) => l.kind === 'vivid')!.effects.grade;
+    expect(REAL_GRADE).toEqual({ saturation: vivid.saturation, contrast: vivid.contrast, brightness: vivid.brightness });
+  });
+
+  test('every surface is graded before tone mapping', () => {
+    for (const kind of ['cloth', 'hair', 'skin', 'metal', 'decal'] as const) {
+      const shader = compile(real(kind));
+      expect(shader.fragmentShader).toContain('gradeC');
+      expect(shader.fragmentShader.indexOf('gradeC')).toBeLessThan(shader.fragmentShader.indexOf(GRADE_ANCHOR));
+    }
+  });
+
+  test('skin keeps its scattering patch alongside the grading', () => {
+    const mat = real('skin');
+    const shader = compile(mat);
+    expect(shader.uniforms).toHaveProperty('skinScatter');
+    expect(mat.customProgramCacheKey()).toContain('real-grade');
+  });
+
+  test('other presets are not graded', () => {
+    const shader = compile(createPresetMaterial('pbr', source(), shared));
+    expect(shader.fragmentShader).not.toContain('gradeC');
   });
 });
