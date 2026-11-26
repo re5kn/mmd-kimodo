@@ -296,10 +296,7 @@ function createRealMaterial(src: PresetMaterialSource, shared: PresetShared): TH
       // Highlights stretch across the strands (U), like a band around the head.
       mat.anisotropy = 0.6;
       mat.anisotropyRotation = 0;
-      // Soft lilac-white sheen lifts dark hair the way effect stacks do.
-      mat.sheen = 0.6;
-      mat.sheenRoughness = 0.55;
-      mat.sheenColor.setRGB(0.85, 0.8, 0.95);
+      // No sheen: a whitish sheen veils dark hair and washes its color out.
       if (shared.detailMaps) detail = tiledDetail(shared.detailMaps.hair, src.uvDensity ?? 0, HAIR_TILE.across, HAIR_TILE.along);
       mat.normalScale.set(0.15, 0.15);
       break;

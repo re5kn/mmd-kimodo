@@ -77,6 +77,8 @@ describe('real preset', () => {
     expect(real('decal')).toBeInstanceOf(THREE.MeshBasicMaterial);
     const hair = real('hair') as THREE.MeshPhysicalMaterial;
     expect(hair.anisotropy).toBeGreaterThan(0);
+    // A whitish sheen would wash dark hair out.
+    expect(hair.sheen).toBe(0);
     const cloth = real('cloth') as THREE.MeshPhysicalMaterial;
     expect(cloth.sheen).toBeGreaterThan(0);
     expect((real('metal') as THREE.MeshPhysicalMaterial).metalness).toBeGreaterThan(0.5);
