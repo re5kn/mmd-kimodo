@@ -110,15 +110,14 @@ describe('figure preset', () => {
   const figure = (kind: PresetMaterialSource['kind'], map: THREE.Texture | null = new THREE.Texture()) =>
     createPresetMaterial('figure', { ...source(map), kind }, shared) as THREE.MeshPhysicalMaterial;
 
-  test('surfaces are smooth; hair, clothes and metal are lacquered and skin is matte', () => {
+  test('every surface is lacquered and smooth, hair the glossiest', () => {
     for (const kind of ['hair', 'skin', 'cloth', 'metal'] as const) {
       const mat = figure(kind);
       expect(mat).toBeInstanceOf(THREE.MeshPhysicalMaterial);
+      expect(mat.clearcoat).toBeGreaterThan(0);
       expect(mat.normalMap).toBeNull();
-      if (kind === 'skin') expect(mat.clearcoat).toBe(0);
-      else expect(mat.clearcoat).toBeGreaterThan(0);
     }
-    expect(FIGURE_FINISH.skin.roughness).toBeGreaterThan(FIGURE_FINISH.hair.roughness);
+    expect(FIGURE_FINISH.hair.clearcoatRoughness).toBeLessThan(FIGURE_FINISH.skin.clearcoatRoughness);
     expect(FIGURE_FINISH.hair.roughness).toBeLessThan(FIGURE_FINISH.cloth.roughness);
   });
 
