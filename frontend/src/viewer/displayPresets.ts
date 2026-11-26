@@ -298,7 +298,7 @@ export const FIGURE_FINISH: Record<Exclude<SurfaceKind, 'decal'>, { roughness: n
 };
 
 /** Warm translucency of PVC skin: light that enters lifts the shadow side (multiplied by the texture). */
-export const FIGURE_SKIN_GLOW: [number, number, number] = [0.05, 0.03, 0.025];
+export const FIGURE_SKIN_GLOW: [number, number, number] = [0.2, 0.07, 0.06];
 
 /**
  * 'figure' preset: the model as a painted PVC figure. Every surface is
