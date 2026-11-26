@@ -11,6 +11,7 @@ import { PoseSolver } from '../mmd/pose';
 import { sampleBoneTrack, sampleIkEnabled, sampleMorphTrack, type BoundMotion } from '../mmd/motion';
 import { createPhysicsEngine, type PhysicsEngine, type PhysicsEngineKind } from '../physics';
 import { PhysicsRig } from '../physics/rig';
+import { StillnessDetector } from '../physics/stillness';
 import { RigidBodyHelper } from './RigidBodyHelper';
 import { physicsStatusStore } from './physicsStatus';
 import {
@@ -42,6 +43,8 @@ export interface ViewerOptions {
   enableIk: boolean;
   enablePhysics: boolean;
   physicsEngine: PhysicsEngineKind;
+  /** Hold the physics result while the model does not move (stops the endless jitter, Issue #25). */
+  freezePhysicsWhenStill: boolean;
   showRigidBodies: boolean;
   displayPreset: DisplayPreset;
   showShadows: boolean;
@@ -56,6 +59,7 @@ export const DEFAULT_VIEWER_OPTIONS: ViewerOptions = {
   enableIk: true,
   enablePhysics: true,
   physicsEngine: 'ammo',
+  freezePhysicsWhenStill: true,
   showRigidBodies: false,
   displayPreset: 'mmd',
   showShadows: true,
@@ -113,6 +117,8 @@ export class MmdViewer {
   private physicsNeedsReset = true;
   private physicsTarget: THREE.Matrix4[] = [];
   private rig: PhysicsRig | null = null;
+  private stillness: StillnessDetector | null = null;
+  private publishedFrozen = false;
   private rigidBodyHelper: RigidBodyHelper | null = null;
   private lastTick = 0;
   private readonly unsubscribeReset: () => void;
@@ -219,6 +225,10 @@ export class MmdViewer {
     }
     if (o.enablePhysics !== prev.enablePhysics || o.physicsEngine !== prev.physicsEngine) {
       void this.syncPhysicsEngine();
+    } else if (o.freezePhysicsWhenStill !== prev.freezePhysicsWhenStill) {
+      // Resume (or start watching) without restarting the simulation.
+      this.stillness?.reset();
+      this.syncFrozenStatus();
     } else if (o.enableIk !== prev.enableIk || o.showRigidBodies !== prev.showRigidBodies) {
       this.physicsNeedsReset = true;
       this.applyFrame();
@@ -360,6 +370,7 @@ export class MmdViewer {
 
     const physicsModel = { bones: model.bones, rigidBodies: model.rigidBodies ?? [], joints: model.joints ?? [] };
     this.rig = new PhysicsRig(physicsModel);
+    this.stillness = StillnessDetector.forRig(this.rig);
     this.physicsTarget = model.bones.map(() => new THREE.Matrix4());
     this.rigidBodyHelper = new RigidBodyHelper(physicsModel.rigidBodies);
     this.rigidBodyHelper.visible = this.options.showRigidBodies;
@@ -443,13 +454,23 @@ export class MmdViewer {
   }
 
   private publishPhysicsStatus(state: 'off' | 'loading' | 'ready' | 'error', message?: string): void {
+    if (state !== 'ready') this.publishedFrozen = false;
     physicsStatusStore.set({
       state,
       engine: state === 'off' ? null : this.options.physicsEngine,
       bodyCount: this.model?.rigidBodies?.length ?? 0,
       jointCount: this.model?.joints?.length ?? 0,
       message,
+      frozen: this.publishedFrozen,
     });
+  }
+
+  /** Tells the sidebar when the simulation is held because the model is still. */
+  private syncFrozenStatus(): void {
+    const frozen = !!(this.options.freezePhysicsWhenStill && this.physicsActive() && this.stillness?.frozen);
+    if (frozen === this.publishedFrozen) return;
+    this.publishedFrozen = frozen;
+    physicsStatusStore.set({ ...physicsStatusStore.get(), frozen });
   }
 
   /**
@@ -478,14 +499,20 @@ export class MmdViewer {
       solver.solve(this.options.enableIk);
     } else {
       solver.solve(this.options.enableIk, 'beforePhysics');
+      const stillness = this.options.freezePhysicsWhenStill ? this.stillness : null;
       if (this.physicsNeedsReset) {
         physics.reset(solver.world);
         this.physicsNeedsReset = false;
-      } else {
+        this.stillness?.reset();
+        physics.getBoneTransforms(this.physicsTarget);
+      } else if (!stillness?.beforeStep(solver.world, dt)) {
+        // Frozen: physicsTarget still holds the last result.
         physics.setBoneTransforms(solver.world);
         physics.step(dt);
+        physics.getBoneTransforms(this.physicsTarget);
+        stillness?.afterStep(this.physicsTarget);
       }
-      physics.getBoneTransforms(this.physicsTarget);
+      this.syncFrozenStatus();
       solver.applyPhysics(physics.boneModes, this.physicsTarget);
       solver.solve(this.options.enableIk, 'afterPhysics');
     }
@@ -590,6 +617,7 @@ export class MmdViewer {
     }
     this.rigidBodyHelper = null;
     this.rig = null;
+    this.stillness = null;
     this.mesh = null;
     this.skeletonHelper = null;
     this.model = null;
