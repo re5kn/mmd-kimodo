@@ -5,8 +5,10 @@ import { PhysicsRig } from '../rig';
 import type { PhysicsEngine, PhysicsModel } from '../types';
 import { loadRapier, type RapierModule } from './loadRapier';
 
+/** MMD scale: 1 unit = 10 cm. */
+const UNITS_PER_METRE = 10;
 /** Same settings as the Ammo.js engine, so the two are comparable. */
-const GRAVITY = -9.8 * 10;
+const GRAVITY = -9.8 * UNITS_PER_METRE;
 const FIXED_STEP = 1 / 120;
 const MAX_SUB_STEPS = 8;
 /** Settling after reset(): same as Ammo.js (30 steps of 1/60 s), coarser than FIXED_STEP to keep a seek cheap. */
@@ -61,6 +63,8 @@ export class RapierPhysics implements PhysicsEngine {
     const rig = new PhysicsRig(model);
     const world = new R.World({ x: 0, y: GRAVITY, z: 0 });
     world.timestep = FIXED_STEP;
+    // Tolerances (allowed penetration, prediction distance) scale with this; MMD models are ~10 units per metre.
+    world.lengthUnit = UNITS_PER_METRE;
     this.world = world;
     this.rig = rig;
     this.boneModes = rig.boneModes;
