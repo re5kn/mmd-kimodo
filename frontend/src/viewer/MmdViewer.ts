@@ -9,7 +9,7 @@ import { decodeFloat32, decodeUint16, decodeUint32 } from '../mmd/decode';
 import { MorphApplier } from '../mmd/morph';
 import { PoseSolver } from '../mmd/pose';
 import { sampleBoneTrack, sampleIkEnabled, sampleMorphTrack, type BoundMotion } from '../mmd/motion';
-import { createPhysicsEngine, type PhysicsEngine, type PhysicsEngineKind } from '../physics';
+import { createPhysicsEngine, type PhysicsEngine, type PhysicsEngineKind, type PhysicsQuality } from '../physics';
 import { PhysicsRig } from '../physics/rig';
 import { StillnessDetector } from '../physics/stillness';
 import { RigidBodyHelper } from './RigidBodyHelper';
@@ -43,6 +43,8 @@ export interface ViewerOptions {
   enableIk: boolean;
   enablePhysics: boolean;
   physicsEngine: PhysicsEngineKind;
+  /** Solver accuracy; 'high' jitters and stretches less but costs 2-4x the time. */
+  physicsQuality: PhysicsQuality;
   /** Hold the physics result while the model does not move (stops the endless jitter, Issue #25). */
   freezePhysicsWhenStill: boolean;
   showRigidBodies: boolean;
@@ -59,6 +61,7 @@ export const DEFAULT_VIEWER_OPTIONS: ViewerOptions = {
   enableIk: true,
   enablePhysics: true,
   physicsEngine: 'ammo',
+  physicsQuality: 'standard',
   freezePhysicsWhenStill: true,
   showRigidBodies: false,
   displayPreset: 'mmd',
@@ -225,6 +228,10 @@ export class MmdViewer {
     }
     if (o.enablePhysics !== prev.enablePhysics || o.physicsEngine !== prev.physicsEngine) {
       void this.syncPhysicsEngine();
+    } else if (o.physicsQuality !== prev.physicsQuality) {
+      // Takes effect from the next step; the swing continues.
+      this.physics?.setQuality(o.physicsQuality);
+      this.stillness?.reset();
     } else if (o.freezePhysicsWhenStill !== prev.freezePhysicsWhenStill) {
       // Resume (or start watching) without restarting the simulation.
       this.stillness?.reset();
@@ -431,6 +438,7 @@ export class MmdViewer {
           engine.dispose();
           return;
         }
+        engine.setQuality(this.options.physicsQuality);
         this.physics = engine;
       } catch (e) {
         if (request !== this.physicsRequest) return;

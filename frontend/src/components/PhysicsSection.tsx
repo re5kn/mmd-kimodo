@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import type { ModelDto } from '../api/types';
-import { PHYSICS_ENGINES, type PhysicsEngineKind } from '../physics';
+import { PHYSICS_ENGINES, PHYSICS_QUALITIES, type PhysicsEngineKind, type PhysicsQuality } from '../physics';
 import type { ViewerOptions } from '../viewer/MmdViewer';
 import { physicsStatusStore } from '../viewer/physicsStatus';
 
@@ -43,6 +43,19 @@ export function PhysicsSection({ model, options, onOptions }: Props) {
           {PHYSICS_ENGINES.map((en) => (
             <option key={en.kind} value={en.kind} disabled={!en.available}>
               {en.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="field" title="高: 揺れ物の微動と伸びが減るが、計算は2〜4倍重くなる">
+        精度
+        <select
+          value={options.physicsQuality}
+          onChange={(e) => onOptions({ physicsQuality: e.target.value as PhysicsQuality })}
+        >
+          {PHYSICS_QUALITIES.map((q) => (
+            <option key={q.quality} value={q.quality}>
+              {q.label}
             </option>
           ))}
         </select>
