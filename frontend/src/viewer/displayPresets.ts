@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CLOTH_TILE, HAIR_TILE } from './detailMaps';
 import type { SurfaceKind } from './surfaceKind';
+import { usePaintedSphere } from './paintedSphere';
 import { MMD_LIGHT_DIRECTION, createMmdMaterial, type MmdLightUniform } from './mmdShading';
 
 /**
@@ -313,6 +314,14 @@ function createRealMaterial(src: PresetMaterialSource, shared: PresetShared): TH
       mat.metalness = 0.85;
       mat.roughness = 0.3;
       break;
+    case 'gem':
+      // Polished stone: sharp highlights, and the picture from its sphere map.
+      mat.roughness = 0.15;
+      mat.specularIntensity = 1;
+      mat.clearcoat = 1;
+      mat.clearcoatRoughness = 0.05;
+      usePaintedSphere(mat, src.sphere);
+      break;
   }
   if (detail) {
     mat.normalMap = detail;
@@ -334,6 +343,7 @@ export const FIGURE_FINISH: Record<Exclude<SurfaceKind, 'decal'>, { roughness: n
   // Clothes: semi-gloss paint.
   cloth: { roughness: 0.6, clearcoat: 0.2, clearcoatRoughness: 0.4, specular: 0.3 },
   metal: { roughness: 0.25, clearcoat: 1, clearcoatRoughness: 0.05, specular: 1 },
+  gem: { roughness: 0.15, clearcoat: 1, clearcoatRoughness: 0.05, specular: 1 },
 };
 
 /** Warm translucency of PVC skin: light that enters lifts the shadow side (multiplied by the texture). */
@@ -365,6 +375,7 @@ function createFigureMaterial(src: PresetMaterialSource): THREE.Material {
   mat.clearcoatRoughness = f.clearcoatRoughness;
   mat.specularIntensity = f.specular;
   if (kind === 'metal') mat.metalness = 0.8;
+  if (kind === 'gem') usePaintedSphere(mat, src.sphere);
   if (kind === 'skin') {
     mat.emissiveMap = src.map;
     mat.emissive.setRGB(...FIGURE_SKIN_GLOW);

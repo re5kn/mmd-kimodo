@@ -3,13 +3,14 @@
  * names, so presets can give hair, cloth and skin different surfaces.
  * PMX has no such field; Japanese and English names are matched.
  */
-export type SurfaceKind = 'hair' | 'cloth' | 'skin' | 'metal' | 'decal';
+export type SurfaceKind = 'hair' | 'cloth' | 'skin' | 'metal' | 'gem' | 'decal';
 
 export const SURFACE_KIND_LABELS: Record<SurfaceKind, string> = {
   hair: '髪',
   cloth: '服',
   skin: '肌',
   metal: '金属',
+  gem: '宝石',
   decal: '目・表情',
 };
 
@@ -18,6 +19,11 @@ export const SURFACE_KIND_LABELS: Record<SurfaceKind, string> = {
  * unlit so they stay as drawn.
  */
 const DECAL = /目|瞳|眉|まつ|睫|ハイライト|涙|汗|照れ|頬|赤面|青ざめ|口内|歯|舌|影|彩度|表情|eye|iris|pupil|brow|lash|highlight|tear|sweat|blush|teeth|tongue|mouth|shadow/i;
+/**
+ * Jewels and brooches: their stone is often only a dark base texture with
+ * the picture painted in an additive sphere map.
+ */
+const GEM = /宝石|ジュエル|ブローチ|ペンダント|gem|jewel|brooch|pendant/i;
 const HAIR = /髪|アホ毛|もみあげ|おさげ|ツインテ|hair|bang|ahoge/i;
 const SKIN = /肌|顔|頭|耳|首|手|足|腕|脚|体|身|skin|face|head|ear|neck|hand|arm|leg|foot|body/i;
 /** Things worn in the hair are not hair (髪_ヘアバンド etc.). */
@@ -35,6 +41,7 @@ const SKIN_FILE = /肌|顔|skin|face/i;
 /** The kind the names point to, or null when nothing matched. */
 function matchSurface(name: string, texturePaths: (string | null | undefined)[]): SurfaceKind | null {
   if (DECAL.test(name)) return 'decal';
+  if (GEM.test(name)) return 'gem';
   if (HAIR_ACCESSORY.test(name)) return METAL.test(name) ? 'metal' : 'cloth';
   if (HAIR.test(name)) return 'hair';
   if (METAL.test(name)) return 'metal';
@@ -44,6 +51,7 @@ function matchSurface(name: string, texturePaths: (string | null | undefined)[])
   for (const f of fileNames(texturePaths)) {
     if (DECAL_FILE.test(f)) return 'decal';
     if (SKIN_FILE.test(f)) return 'skin';
+    if (GEM.test(f)) return 'gem';
     if (HAIR.test(f)) return 'hair';
     if (METAL.test(f)) return 'metal';
     if (CLOTH.test(f)) return 'cloth';
