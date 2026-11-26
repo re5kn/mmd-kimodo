@@ -275,6 +275,13 @@ function createRealMaterial(src: PresetMaterialSource, shared: PresetShared): TH
       mat.metalness = 0.85;
       mat.roughness = 0.3;
       break;
+    case 'gem':
+      // Polished stone: sharp highlights.
+      mat.roughness = 0.15;
+      mat.specularIntensity = 1;
+      mat.clearcoat = 1;
+      mat.clearcoatRoughness = 0.05;
+      break;
   }
   if (detail) {
     mat.normalMap = detail;
@@ -295,6 +302,7 @@ export const FIGURE_FINISH: Record<Exclude<SurfaceKind, 'decal'>, { roughness: n
   // Clothes: semi-gloss paint.
   cloth: { roughness: 0.6, clearcoat: 0.2, clearcoatRoughness: 0.4, specular: 0.3 },
   metal: { roughness: 0.25, clearcoat: 1, clearcoatRoughness: 0.05, specular: 1 },
+  gem: { roughness: 0.15, clearcoat: 1, clearcoatRoughness: 0.05, specular: 1 },
 };
 
 /** Warm translucency of PVC skin: light that enters lifts the shadow side (multiplied by the texture). */
