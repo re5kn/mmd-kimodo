@@ -5,7 +5,7 @@ import { DEFAULT_EFFECTS, NEUTRAL_GRADE, type EffectSettings } from './postEffec
  * common MME effects, laid over whichever display preset is in use. Each
  * one only fills in the effect settings, so it can be adjusted afterwards.
  */
-export type LookKind = 'none' | 'vivid' | 'soft' | 'cinema' | 'glow';
+export type LookKind = 'none' | 'vivid' | 'soft' | 'cinema' | 'glow' | 'figurePhoto';
 
 export const LOOKS: { kind: LookKind; label: string; description: string; effects: EffectSettings }[] = [
   { kind: 'none', label: 'なし', description: 'エフェクトなし', effects: DEFAULT_EFFECTS },
@@ -47,6 +47,17 @@ export const LOOKS: { kind: LookKind; label: string; description: string; effect
       bloom: { enabled: true, strength: 0.6, radius: 0.3, threshold: 0.95 },
       smaa: true,
       grade: { ...NEUTRAL_GRADE, saturation: 1.15 },
+    },
+  },
+  {
+    kind: 'figurePhoto',
+    label: 'フィギュア撮影',
+    description: '接写のような強い背景ぼかしで、小さな模型を撮ったように見せる（表示「フィギュア」と合わせて）',
+    effects: {
+      ...DEFAULT_EFFECTS,
+      dof: { enabled: true, strength: 0.8 },
+      smaa: true,
+      grade: { ...NEUTRAL_GRADE, saturation: 1.1, contrast: 1.05, vignette: 0.25 },
     },
   },
 ];
