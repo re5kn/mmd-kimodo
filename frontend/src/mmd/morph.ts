@@ -1,7 +1,7 @@
 import type { ModelDto } from '../api/types';
 import { decodeFloat32, decodeUint32 } from './decode';
+import { expandMorphWeights } from './materialMorph';
 
-const MORPH_GROUP = 0;
 const MORPH_VERTEX = 1;
 
 interface VertexMorph {
@@ -42,11 +42,7 @@ export class MorphApplier {
    * @returns true if the position buffer changed
    */
   apply(weights: ArrayLike<number>): boolean {
-    const eff = this.effective;
-    eff.fill(0);
-    for (let i = 0; i < weights.length; i++) {
-      if (weights[i] !== 0) this.accumulate(i, weights[i], 0);
-    }
+    const eff = expandMorphWeights(this.model, weights, this.effective);
 
     const { base, target, touched } = this;
     const hadTouched = touched.size > 0;
@@ -73,15 +69,5 @@ export class MorphApplier {
       }
     }
     return hadTouched || touched.size > 0;
-  }
-
-  private accumulate(index: number, weight: number, depth: number) {
-    const m = this.model.morphs[index];
-    if (!m || depth > 8) return;
-    if (m.type === MORPH_GROUP && m.group) {
-      for (const g of m.group) this.accumulate(g.morph, weight * g.ratio, depth + 1);
-    } else {
-      this.effective[index] += weight;
-    }
   }
 }
