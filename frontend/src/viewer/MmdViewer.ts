@@ -16,6 +16,7 @@ import { StillnessDetector } from '../physics/stillness';
 import { RigidBodyHelper } from './RigidBodyHelper';
 import { applyMaterialMorphState } from './materialMorphApply';
 import { physicsStatusStore } from './physicsStatus';
+import { morphControlStore } from './morphControl';
 import {
   createPresetMaterial,
   presetLighting,
@@ -130,6 +131,7 @@ export class MmdViewer {
   private rigidBodyHelper: RigidBodyHelper | null = null;
   private lastTick = 0;
   private readonly unsubscribeReset: () => void;
+  private readonly unsubscribeMorphs: () => void;
 
   options: ViewerOptions = { ...DEFAULT_VIEWER_OPTIONS };
 
@@ -176,6 +178,7 @@ export class MmdViewer {
     this.resize();
     this.loop();
     this.unsubscribeReset = physicsStatusStore.onResetRequest(() => this.resetPhysics());
+    this.unsubscribeMorphs = morphControlStore.subscribe(() => this.applyFrame());
     void this.syncPhysicsEngine();
   }
 
@@ -183,6 +186,7 @@ export class MmdViewer {
     this.disposed = true;
     this.resizeObserver.disconnect();
     this.unsubscribeReset();
+    this.unsubscribeMorphs();
     this.clearModel();
     this.physicsRequest++;
     this.physics?.dispose();
@@ -511,6 +515,9 @@ export class MmdViewer {
         if (track) this.morphWeights[i] = sampleMorphTrack(track, this.frame);
       }
     }
+    for (const [i, w] of morphControlStore.get()) {
+      if (i < this.morphWeights.length) this.morphWeights[i] = w;
+    }
     const physics = this.physicsActive() ? this.physics! : null;
     if (!physics) {
       solver.solve(this.options.enableIk);
@@ -662,6 +669,8 @@ export class MmdViewer {
     this.materialMorphs = null;
     this.materialMorphStates = null;
     this.bones = [];
+    // Hand-set weights belong to this model's morph indices.
+    morphControlStore.reset();
     this.bonePoints = [];
     this.needsRender = true;
   }
