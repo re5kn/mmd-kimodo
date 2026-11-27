@@ -213,10 +213,14 @@ function writePmx() {
       }
     }
   }
-  w.i32(2);
+  w.i32(3);
   w.text('あ').text('a').u8(3).u8(1).i32(morphOffsets.length);
   for (const [i, o] of morphOffsets) w.u16(i).f32(...o);
   w.text('あ半分').text('a half').u8(3).u8(0).i32(1).i8(0).f32(0.5);
+  // Material morph "照れ": multiply the skin toward red (other factors neutral).
+  w.text('照れ').text('blush').u8(4).u8(8).i32(1).i8(0).u8(0);
+  w.f32(1, 0.75, 0.75, 1).f32(1, 1, 1).f32(1).f32(1, 1, 1).f32(1, 1, 1, 1).f32(1);
+  w.f32(1, 1, 1, 1).f32(1, 1, 1, 1).f32(1, 1, 1, 1);
   w.i32(0); // display frames
   w.i32(rigidBodies.length);
   for (const r of rigidBodies) {

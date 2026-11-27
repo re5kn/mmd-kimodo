@@ -161,6 +161,7 @@ public sealed class PmxMorph
     public PmxVertexMorphOffset[] VertexOffsets { get; init; } = [];
     public PmxGroupMorphOffset[] GroupOffsets { get; init; } = [];
     public PmxBoneMorphOffset[] BoneOffsets { get; init; } = [];
+    public PmxMaterialMorphOffset[] MaterialOffsets { get; init; } = [];
 }
 
 public readonly record struct PmxVertexMorphOffset(int Vertex, Vector3 Offset);
@@ -168,6 +169,32 @@ public readonly record struct PmxVertexMorphOffset(int Vertex, Vector3 Offset);
 public readonly record struct PmxGroupMorphOffset(int Morph, float Ratio);
 
 public readonly record struct PmxBoneMorphOffset(int Bone, Vector3 Translation, Quaternion Rotation);
+
+/// <summary>How a material morph combines with the material: multiply (lerp from 1) or add.</summary>
+public enum PmxMaterialMorphOp : byte
+{
+    Multiply = 0,
+    Add = 1,
+}
+
+/// <summary>
+/// One material morph entry. Material -1 means every material. The texture,
+/// sphere and toon factors tint those images (RGBA).
+/// </summary>
+public sealed class PmxMaterialMorphOffset
+{
+    public int Material { get; init; } = -1;
+    public PmxMaterialMorphOp Op { get; init; }
+    public Vector4 Diffuse { get; init; }
+    public Vector3 Specular { get; init; }
+    public float Specularity { get; init; }
+    public Vector3 Ambient { get; init; }
+    public Vector4 EdgeColor { get; init; }
+    public float EdgeSize { get; init; }
+    public Vector4 TextureFactor { get; init; }
+    public Vector4 SphereFactor { get; init; }
+    public Vector4 ToonFactor { get; init; }
+}
 
 public enum PmxRigidBodyShape : byte
 {

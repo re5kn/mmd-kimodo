@@ -92,7 +92,14 @@ public static class DtoMapper
             {
                 group = mo.GroupOffsets.Select(g => new GroupOffsetDto(g.Morph, g.Ratio)).ToArray();
             }
-            return new MorphDto(mo.Name, mo.NameEn, mo.Panel, (int)mo.Type, vi, vo, group);
+            MaterialMorphOffsetDto[]? material = null;
+            if (mo.Type == PmxMorphType.Material)
+            {
+                material = mo.MaterialOffsets.Select(o => new MaterialMorphOffsetDto(
+                    o.Material, (int)o.Op, A(o.Diffuse), A(o.Specular), o.Specularity, A(o.Ambient),
+                    A(o.EdgeColor), o.EdgeSize, A(o.TextureFactor), A(o.SphereFactor), A(o.ToonFactor))).ToArray();
+            }
+            return new MorphDto(mo.Name, mo.NameEn, mo.Panel, (int)mo.Type, vi, vo, group, material);
         }).ToArray();
 
         var rigidBodies = m.RigidBodies.Select(rb => new RigidBodyDto(

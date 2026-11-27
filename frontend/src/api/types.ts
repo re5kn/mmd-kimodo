@@ -94,6 +94,26 @@ export interface MorphDto {
   vertexIndices: string | null;
   vertexOffsets: string | null;
   group: { morph: number; ratio: number }[] | null;
+  /** Material morph entries (type 8). */
+  material?: MaterialMorphOffsetDto[] | null;
+}
+
+/**
+ * Material morph entry. material -1: every material. op 0: multiply (lerp
+ * from 1 by the weight), 1: add. Colors as in PMX (sRGB 0-1, RGBA / RGB).
+ */
+export interface MaterialMorphOffsetDto {
+  material: number;
+  op: number;
+  diffuse: Vec4;
+  specular: Vec3;
+  specularity: number;
+  ambient: Vec3;
+  edgeColor: Vec4;
+  edgeSize: number;
+  textureFactor: Vec4;
+  sphereFactor: Vec4;
+  toonFactor: Vec4;
 }
 
 /** Rigid body shape: 0 sphere, 1 box, 2 capsule. */
