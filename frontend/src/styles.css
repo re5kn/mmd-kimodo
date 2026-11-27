@@ -158,3 +158,14 @@ button.link { border: none; background: none; padding: 0 2px; color: var(--accen
   font-size: 11px; font-weight: 600; color: var(--muted); cursor: pointer;
   border-top: 1px solid var(--border, #ddd); padding-top: 6px; margin-top: 4px;
 }
+
+/* Material panel: one row per material (show, color, opacity, reset). */
+.material-list > summary { font-size: 12px; cursor: pointer; color: var(--muted); }
+.material-list ul { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.material-list li { display: grid; grid-template-columns: minmax(0, 1fr) 26px 64px 20px; align-items: center; gap: 4px; font-size: 12px; }
+.material-list li.hidden .material-name span { color: var(--muted); text-decoration: line-through; }
+.material-name { display: flex; align-items: center; gap: 4px; min-width: 0; cursor: pointer; }
+.material-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.material-list input[type='color'] { width: 26px; height: 20px; padding: 0; border: 1px solid var(--border); border-radius: 3px; background: none; }
+.material-list input[type='range'] { width: 64px; }
+.material-reset { padding: 0; width: 20px; height: 20px; font-size: 12px; line-height: 1; }
