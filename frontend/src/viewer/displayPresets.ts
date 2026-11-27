@@ -84,6 +84,9 @@ function common(src: PresetMaterialSource) {
   return {
     name: src.name,
     opacity: src.diffuse[3],
+    // Fully transparent materials (shown later by a material morph) are
+    // skipped, so they cast no shadow either.
+    visible: src.diffuse[3] > 0,
     transparent: true,
     alphaTest: 0.001,
     depthWrite: true,

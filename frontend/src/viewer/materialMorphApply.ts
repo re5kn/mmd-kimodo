@@ -9,7 +9,8 @@ const linear = (v: number) => new THREE.Color().setRGB(v, v, v, THREE.SRGBColorS
 /**
  * Shows a material's material-morph state on a preset material.
  *
- * - Every preset: opacity (diffuse alpha) and the edge (color, alpha, size).
+ * - Every preset: opacity (diffuse alpha; 0 hides the material, shadow
+ *   included) and the edge (color, alpha, size).
  * - MMD 風: diffuse / ambient / specular / shininess and the texture,
  *   sphere and toon factors go into the MMD shader, as in MMD.
  * - Other presets (except 粘土, which stays gray) have no MMD color terms, so the diffuse change is applied
@@ -34,6 +35,7 @@ export function applyMaterialMorphState(
   const u = mat.userData.mmdUniforms as Record<string, { value: THREE.Vector3 | THREE.Vector4 | number }> | undefined;
   if (preset === 'mmd' && u) {
     mat.opacity = clamp01(s.diffuse[3]);
+    mat.visible = mat.opacity > 0;
     (u.mmdDiffuse.value as THREE.Vector3).set(s.diffuse[0], s.diffuse[1], s.diffuse[2]);
     (u.mmdAmbient.value as THREE.Vector3).set(...s.ambient);
     (u.mmdSpecular.value as THREE.Vector3).set(...s.specular);
@@ -48,6 +50,7 @@ export function applyMaterialMorphState(
   }
 
   mat.opacity = clamp01(s.diffuse[3] * s.textureMul[3] + s.textureAdd[3]);
+  mat.visible = mat.opacity > 0;
   const colored = mat as THREE.Material & { color?: THREE.Color };
   // Clay is one gray on purpose: only visibility changes there.
   if (!colored.color || preset === 'clay') return;

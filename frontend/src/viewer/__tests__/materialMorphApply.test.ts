@@ -20,11 +20,13 @@ const source = (): PresetMaterialSource => ({
 describe('applyMaterialMorphState', () => {
   test('MMD preset: shows a hidden material and tints it in the shader', () => {
     const mat = createPresetMaterial('mmd', source(), {});
+    expect(mat.visible).toBe(false);
     const s = baseMaterialState(pmx);
     s.diffuse = [0.8, 0.3, 0.2, 1];
     s.textureMul = [1, 0.5, 0.5, 1];
     applyMaterialMorphState('mmd', mat, source(), s);
     expect(mat.opacity).toBe(1);
+    expect(mat.visible).toBe(true);
     const u = mat.userData.mmdUniforms;
     expect(u.mmdDiffuse.value.toArray()).toEqual([0.8, 0.3, 0.2]);
     expect(u.mmdTexMul.value.toArray()).toEqual([1, 0.5, 0.5, 1]);
