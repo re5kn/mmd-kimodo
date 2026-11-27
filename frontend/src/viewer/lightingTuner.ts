@@ -10,6 +10,15 @@ export type TunableLighting = Omit<PresetLighting, 'lightFrom'>;
 type Overrides = Partial<Record<DisplayPreset, Partial<TunableLighting>>>;
 
 const STORAGE_KEY = 'mmd-kimodo.lightingTuner';
+const COMPARE_KEY = 'mmd-kimodo.lightingTuner.compare';
+
+function loadCompare(): boolean {
+  try {
+    return localStorage.getItem(COMPARE_KEY) !== 'false';
+  } catch {
+    return true;
+  }
+}
 
 function load(): Overrides {
   try {
@@ -21,6 +30,8 @@ function load(): Overrides {
 }
 
 let overrides: Overrides = load();
+/** Split the view: left as the preset defines it, right with the tuned values. */
+let compare = loadCompare();
 const listeners = new Set<() => void>();
 
 function save(): void {
@@ -42,6 +53,16 @@ export const lightingTunerStore = {
     const { [preset]: _, ...rest } = overrides;
     overrides = rest;
     save();
+    listeners.forEach((l) => l());
+  },
+  getCompare: (): boolean => compare,
+  setCompare(on: boolean): void {
+    compare = on;
+    try {
+      localStorage.setItem(COMPARE_KEY, String(on));
+    } catch {
+      // Storage unavailable: this session only.
+    }
     listeners.forEach((l) => l());
   },
   subscribe(listener: () => void): () => void {

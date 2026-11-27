@@ -27,6 +27,7 @@ const toHex = (v: number) => `#${v.toString(16).padStart(6, '0')}`;
 
 export function LightingTunerSection({ options }: { options: ViewerOptions }) {
   const overrides = useSyncExternalStore(lightingTunerStore.subscribe, lightingTunerStore.get);
+  const compare = useSyncExternalStore(lightingTunerStore.subscribe, lightingTunerStore.getCompare);
   const [copied, setCopied] = useState(false);
   const preset = options.displayPreset;
   const label = DISPLAY_PRESETS.find((d) => d.kind === preset)?.label ?? preset;
@@ -50,6 +51,10 @@ export function LightingTunerSection({ options }: { options: ViewerOptions }) {
     <section>
       <h2>照明の調整（{label}）</h2>
       <p className="hint">調整用の一時的なパネルです。値はこのブラウザに保存されます</p>
+      <label className="check">
+        <input type="checkbox" checked={compare} onChange={(e) => lightingTunerStore.setCompare(e.target.checked)} />
+        左右で比較（左: 補正なし、右: 補正あり。値を変えたときに表示）
+      </label>
       {preset === 'flat' && <p className="hint">フラットは光の影響を受けません</p>}
       {preset === 'mmd' && <p className="hint">MMD 風は MMD の式で色を決めるため、主に影と床にだけ効きます</p>}
       {SLIDERS.map((s) => (

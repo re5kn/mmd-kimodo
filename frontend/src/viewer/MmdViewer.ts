@@ -20,7 +20,9 @@ import { physicsStatusStore } from './physicsStatus';
 import { morphControlStore } from './morphControl';
 import {
   createPresetMaterial,
+  presetLighting,
   type DisplayPreset,
+  type PresetLighting,
   type PresetMaterialSource,
 } from './displayPresets';
 import { lightingTunerStore, tunedPresetLighting } from './lightingTuner';
@@ -140,6 +142,8 @@ export class MmdViewer {
   private readonly unsubscribeReset: () => void;
   /** Temporary lighting tuner (see lightingTuner.ts). */
   private readonly unsubscribeTuner: () => void;
+  /** Labels and divider of the tuner's left / right comparison. */
+  private compareOverlay: HTMLDivElement | null = null;
   private readonly unsubscribeMorphs: () => void;
   private readonly unsubscribeMaterialEdits: () => void;
 
@@ -608,7 +612,28 @@ export class MmdViewer {
   }
 
   private applyPresetLighting(): void {
-    const l = tunedPresetLighting(this.options.displayPreset);
+    this.applyLighting(tunedPresetLighting(this.options.displayPreset));
+    this.updateCompareOverlay();
+  }
+
+  /** Tuner comparison: left half untuned, right half tuned (only while the preset has tuned values). */
+  private compareActive(): boolean {
+    const o = lightingTunerStore.get()[this.options.displayPreset];
+    return lightingTunerStore.getCompare() && !!o && Object.keys(o).length > 0;
+  }
+
+  private updateCompareOverlay(): void {
+    if (!this.compareOverlay) {
+      const el = document.createElement('div');
+      el.className = 'compare-overlay';
+      el.innerHTML = '<span>補正なし</span><span>補正あり</span>';
+      this.container.appendChild(el);
+      this.compareOverlay = el;
+    }
+    this.compareOverlay.hidden = !this.compareActive();
+  }
+
+  private applyLighting(l: PresetLighting): void {
     this.hemiLight.intensity = l.hemisphere;
     this.hemiLight.color.setHex(l.skyColor);
     this.hemiLight.groundColor.setHex(l.groundColor);
@@ -725,10 +750,30 @@ export class MmdViewer {
     if (!this.needsRender) return;
     this.needsRender = false;
     if (this.options.showShadows) this.fitShadows();
+    if (!this.compareActive()) {
+      this.renderScene();
+      return;
+    }
+    // Same camera twice, each half with its own lighting.
+    const w = Math.max(this.container.clientWidth, 1);
+    const h = Math.max(this.container.clientHeight, 1);
+    const half = Math.floor(w / 2);
+    this.renderer.setScissorTest(true);
+    this.applyLighting(presetLighting(this.options.displayPreset));
+    this.renderer.setScissor(0, 0, half, h);
+    this.renderScene();
+    this.applyLighting(tunedPresetLighting(this.options.displayPreset));
+    this.renderer.setScissor(half, 0, w - half, h);
+    this.renderScene();
+    this.renderer.setScissorTest(false);
+    this.needsRender = false;
+  };
+
+  private renderScene(): void {
     if (effectsActive(this.options.effects)) {
       const focus = this.camera.position.distanceTo(this.controls.target);
       this.post.render(this.options.effects, { outline: this.options.showOutline, focus });
     } else if (this.options.showOutline) this.outline.render(this.scene, this.camera);
     else this.renderer.render(this.scene, this.camera);
-  };
+  }
 }

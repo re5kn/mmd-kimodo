@@ -30,3 +30,11 @@ describe('lighting tuner', () => {
     lightingTunerStore.reset('real');
   });
 });
+
+test('the left / right comparison can be turned off and on', () => {
+  expect(lightingTunerStore.getCompare()).toBe(true);
+  lightingTunerStore.setCompare(false);
+  expect(lightingTunerStore.getCompare()).toBe(false);
+  lightingTunerStore.setCompare(true);
+  expect(lightingTunerStore.getCompare()).toBe(true);
+});
