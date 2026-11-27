@@ -9,6 +9,8 @@ export interface PhysicsStatus {
   bodyCount: number;
   jointCount: number;
   message?: string;
+  /** The simulation is held because the model does not move. */
+  frozen: boolean;
 }
 
 /**
@@ -16,7 +18,7 @@ export interface PhysicsStatus {
  * has a single viewer): the viewer publishes its status, read with
  * useSyncExternalStore, and listens for reset requests.
  */
-let status: PhysicsStatus = { state: 'off', engine: null, bodyCount: 0, jointCount: 0 };
+let status: PhysicsStatus = { state: 'off', engine: null, bodyCount: 0, jointCount: 0, frozen: false };
 const listeners = new Set<() => void>();
 const resetListeners = new Set<() => void>();
 
