@@ -194,7 +194,7 @@ export function Sidebar(p: Props) {
       </div>
 
       <footer className="sidebar-footer">
-        材質モーフ・カメラモーションは未対応
+        ボーン・UV モーフ、カメラ・照明モーションは未対応
       </footer>
     </aside>
   );
