@@ -87,9 +87,28 @@ public sealed record MorphDto(
     /// <summary>Vertex morph: Float32 x3 offsets (base64).</summary>
     string? VertexOffsets,
     /// <summary>Group morph children.</summary>
-    GroupOffsetDto[]? Group);
+    GroupOffsetDto[]? Group,
+    /// <summary>Material morph entries.</summary>
+    MaterialMorphOffsetDto[]? Material);
 
 public sealed record GroupOffsetDto(int Morph, float Ratio);
+
+/// <summary>
+/// Material morph entry. Material -1: every material. Op 0: multiply (lerp
+/// from 1 by the weight), 1: add. Colors as in PMX (RGBA / RGB).
+/// </summary>
+public sealed record MaterialMorphOffsetDto(
+    int Material,
+    int Op,
+    float[] Diffuse,
+    float[] Specular,
+    float Specularity,
+    float[] Ambient,
+    float[] EdgeColor,
+    float EdgeSize,
+    float[] TextureFactor,
+    float[] SphereFactor,
+    float[] ToonFactor);
 
 /// <summary>Rigid body. Shape: 0 sphere, 1 box, 2 capsule. Mode: 0 follow bone, 1 physics, 2 physics + bone position.</summary>
 public sealed record RigidBodyDto(

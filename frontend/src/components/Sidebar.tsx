@@ -7,6 +7,7 @@ import { DISPLAY_PRESETS } from '../viewer/displayPresets';
 import { EffectsSection } from './EffectsSection';
 import { LightingSection } from './LightingSection';
 import { LightingTunerSection } from './LightingTunerSection';
+import { MorphSection } from './MorphSection';
 import { PhysicsSection } from './PhysicsSection';
 
 interface Props {
@@ -188,13 +189,15 @@ export function Sidebar(p: Props) {
 
       <PhysicsSection model={m} options={p.options} onOptions={p.onOptions} />
 
+      <MorphSection model={m} />
+
       <div className="status" role="status">
         {p.busy && <div className="busy">{p.busy}</div>}
         {p.error && <div className="error">{p.error}</div>}
       </div>
 
       <footer className="sidebar-footer">
-        材質モーフ・カメラモーションは未対応
+        ボーン・UV モーフ、カメラ・照明モーションは未対応
       </footer>
     </aside>
   );

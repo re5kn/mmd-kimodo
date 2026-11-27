@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import type { ModelDto } from '../api/types';
-import { PHYSICS_ENGINES, type PhysicsEngineKind } from '../physics';
+import { PHYSICS_ENGINES, PHYSICS_QUALITIES, type PhysicsEngineKind, type PhysicsQuality } from '../physics';
 import type { ViewerOptions } from '../viewer/MmdViewer';
 import { physicsStatusStore } from '../viewer/physicsStatus';
 
@@ -47,6 +47,19 @@ export function PhysicsSection({ model, options, onOptions }: Props) {
           ))}
         </select>
       </label>
+      <label className="field" title="高: 揺れ物の微動と伸びが減るが、計算は2〜4倍重くなる">
+        精度
+        <select
+          value={options.physicsQuality}
+          onChange={(e) => onOptions({ physicsQuality: e.target.value as PhysicsQuality })}
+        >
+          {PHYSICS_QUALITIES.map((q) => (
+            <option key={q.quality} value={q.quality}>
+              {q.label}
+            </option>
+          ))}
+        </select>
+      </label>
       <label className="check">
         <input
           type="checkbox"
@@ -55,6 +68,15 @@ export function PhysicsSection({ model, options, onOptions }: Props) {
         />{' '}
         剛体を表示
       </label>
+      <label className="check" title="モデルが動いていない間は物理演算を止めて、揺れ物の微動をなくす">
+        <input
+          type="checkbox"
+          checked={options.freezePhysicsWhenStill}
+          disabled={!options.enablePhysics}
+          onChange={(e) => onOptions({ freezePhysicsWhenStill: e.target.checked })}
+        />{' '}
+        静止中は止める
+      </label>
       <button onClick={physicsStatusStore.requestReset} title="現在の姿勢から物理演算をやり直す" disabled={!options.enablePhysics || bodies === 0}>
         物理リセット
       </button>
@@ -62,6 +84,12 @@ export function PhysicsSection({ model, options, onOptions }: Props) {
         <dl className="info">
           <dt>剛体 / ジョイント</dt>
           <dd>{bodies} / {joints}</dd>
+          {options.enablePhysics && options.freezePhysicsWhenStill && (
+            <>
+              <dt>状態</dt>
+              <dd>{status.frozen ? '静止中（停止）' : '計算中'}</dd>
+            </>
+          )}
         </dl>
       )}
       {message && <p className={status.state === 'error' ? 'physics-note error' : 'physics-note'}>{message}</p>}

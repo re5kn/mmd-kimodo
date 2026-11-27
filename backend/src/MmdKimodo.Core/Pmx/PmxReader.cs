@@ -321,6 +321,7 @@ public static class PmxReader
             PmxVertexMorphOffset[] vertexOffsets = [];
             PmxGroupMorphOffset[] groupOffsets = [];
             PmxBoneMorphOffset[] boneOffsets = [];
+            PmxMaterialMorphOffset[] materialOffsets = [];
 
             switch (type)
             {
@@ -355,11 +356,23 @@ public static class PmxReader
                     }
                     break;
                 case PmxMorphType.Material:
-                    // index + op(1) + diffuse4 + spec3 + specularity1 + ambient3 + edge4 + edgeSize1 + tex4 + sphere4 + toon4 = 28 floats
+                    materialOffsets = new PmxMaterialMorphOffset[n];
                     for (int k = 0; k < n; k++)
                     {
-                        r.ReadIndex(matIdx);
-                        r.ReadBytes(1 + 28 * 4);
+                        materialOffsets[k] = new PmxMaterialMorphOffset
+                        {
+                            Material = r.ReadIndex(matIdx),
+                            Op = (PmxMaterialMorphOp)r.ReadByte(),
+                            Diffuse = r.ReadVector4(),
+                            Specular = r.ReadVector3(),
+                            Specularity = r.ReadSingle(),
+                            Ambient = r.ReadVector3(),
+                            EdgeColor = r.ReadVector4(),
+                            EdgeSize = r.ReadSingle(),
+                            TextureFactor = r.ReadVector4(),
+                            SphereFactor = r.ReadVector4(),
+                            ToonFactor = r.ReadVector4(),
+                        };
                     }
                     break;
                 case PmxMorphType.Impulse:
@@ -382,6 +395,7 @@ public static class PmxReader
                 VertexOffsets = vertexOffsets,
                 GroupOffsets = groupOffsets,
                 BoneOffsets = boneOffsets,
+                MaterialOffsets = materialOffsets,
             };
         }
         return morphs;

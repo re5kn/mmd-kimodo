@@ -21,6 +21,9 @@ describe('classifySurface', () => {
     ['金', 'metal'],
     ['ニーハイ', 'cloth'],
     ['スカート', 'cloth'],
+    ['[WEAR]Brooch_Sphere', 'gem'],
+    ['ブローチ', 'gem'],
+    ['宝石', 'gem'],
   ])('%s → %s', (name, kind) => {
     expect(classifySurface(name)).toBe(kind);
   });

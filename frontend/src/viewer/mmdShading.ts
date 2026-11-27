@@ -55,6 +55,13 @@ uniform vec3 mmdAmbient;
 uniform vec3 mmdSpecular;
 uniform float mmdShininess;
 uniform vec3 mmdLightColor;
+// Material morph factors (image × mul + add, sRGB).
+uniform vec4 mmdTexMul;
+uniform vec4 mmdTexAdd;
+uniform vec4 mmdSphereMul;
+uniform vec4 mmdSphereAdd;
+uniform vec4 mmdToonMul;
+uniform vec4 mmdToonAdd;
 #if MMD_SPHERE_MODE > 0
   uniform sampler2D mmdSphere;
 #endif
@@ -70,7 +77,8 @@ const FRAGMENT_MAIN = /* glsl */ `
   #endif
   // diffuseColor.rgb holds the (linear) texture color; MMD works in sRGB.
   vec3 mmdColor = clamp( mmdDiffuse * mmdLightColor + mmdAmbient, 0.0, 1.0 );
-  mmdColor *= sRGBTransferOETF( vec4( diffuseColor.rgb, 1.0 ) ).rgb;
+  mmdColor *= sRGBTransferOETF( vec4( diffuseColor.rgb, 1.0 ) ).rgb * mmdTexMul.rgb + mmdTexAdd.rgb;
+  diffuseColor.a = diffuseColor.a * mmdTexMul.a + opacity * mmdTexAdd.a;
   #if MMD_SPHERE_MODE > 0
     #if MMD_SPHERE_MODE == 3
       vec2 mmdSphereUv = vMmdSubUv;
@@ -78,7 +86,7 @@ const FRAGMENT_MAIN = /* glsl */ `
       vec2 mmdSphereUv = vec2( normal.x * 0.5 + 0.5, normal.y * -0.5 + 0.5 );
     #endif
     vec4 mmdSph = texture2D( mmdSphere, mmdSphereUv );
-    vec3 mmdSphColor = sRGBTransferOETF( mmdSph ).rgb;
+    vec3 mmdSphColor = sRGBTransferOETF( mmdSph ).rgb * mmdSphereMul.rgb + mmdSphereAdd.rgb;
     #if MMD_SPHERE_MODE == 2
       mmdColor += mmdSphColor;
     #else
@@ -98,14 +106,14 @@ const FRAGMENT_MAIN = /* glsl */ `
       directionalLightShadows[ 0 ].shadowRadius, vDirectionalShadowCoord[ 0 ] ) : 1.0;
     #ifdef USE_GRADIENTMAP
       mmdLit = min( clamp( mmdNL * 3.0, 0.0, 1.0 ), mmdLit );
-      vec3 mmdShade = sRGBTransferOETF( texture2D( gradientMap, vec2( 0.0, 1.0 ) ) ).rgb;
+      vec3 mmdShade = sRGBTransferOETF( texture2D( gradientMap, vec2( 0.0, 1.0 ) ) ).rgb * mmdToonMul.rgb + mmdToonAdd.rgb;
     #else
       vec3 mmdShade = vec3( 1.0 );
     #endif
     mmdColor = mix( mmdColor * mmdShade, mmdColor + mmdSpec, mmdLit );
   #else
     #ifdef USE_GRADIENTMAP
-      mmdColor *= sRGBTransferOETF( texture2D( gradientMap, vec2( 0.0, 0.5 - 0.5 * mmdNL ) ) ).rgb;
+      mmdColor *= sRGBTransferOETF( texture2D( gradientMap, vec2( 0.0, 0.5 - 0.5 * mmdNL ) ) ).rgb * mmdToonMul.rgb + mmdToonAdd.rgb;
     #endif
     mmdColor += mmdSpec;
   #endif
@@ -140,6 +148,12 @@ export function createMmdMaterial(
     mmdShininess: { value: src.specularity },
     mmdLightColor: lightColor,
     mmdSphere: { value: src.sphere?.map ?? null },
+    mmdTexMul: { value: new THREE.Vector4(1, 1, 1, 1) },
+    mmdTexAdd: { value: new THREE.Vector4(0, 0, 0, 0) },
+    mmdSphereMul: { value: new THREE.Vector4(1, 1, 1, 1) },
+    mmdSphereAdd: { value: new THREE.Vector4(0, 0, 0, 0) },
+    mmdToonMul: { value: new THREE.Vector4(1, 1, 1, 1) },
+    mmdToonAdd: { value: new THREE.Vector4(0, 0, 0, 0) },
   };
   mat.userData.mmdUniforms = uniforms;
   mat.onBeforeCompile = (shader) => {

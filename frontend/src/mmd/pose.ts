@@ -111,6 +111,7 @@ export class PoseSolver {
   solve(enableIk = true, phase: SolvePhase = 'all'): void {
     const { bones } = this;
     const order = phase === 'all' ? this.order : phase === 'beforePhysics' ? this.orderBeforePhysics : this.orderAfterPhysics;
+    if (enableIk) this.prepareIkTargets(order);
     for (const i of order) {
       const b = bones[i];
       const t = this.localT[i].copy(this.restOffset[i]).add(this.motionT[i]);
@@ -162,6 +163,32 @@ export class PoseSolver {
     }
   }
 
+  /**
+   * Gives every bone of this phase its motion-only local transform before the
+   * deform-order pass. An IK bone can be sorted before its target (e.g. 足ＩＫ
+   * with a smaller index than 足首); without this the target would still hold
+   * the previous frame's transform when the IK measures the effector. The main
+   * pass recomputes these bones with append and IK afterwards.
+   */
+  private prepareIkTargets(order: readonly number[]): void {
+    for (const i of order) {
+      this.localT[i].copy(this.restOffset[i]).add(this.motionT[i]);
+      this.localR[i].copy(this.motionR[i]);
+    }
+  }
+
+  /** Recomputes the world matrices from the root down to bone `i`. */
+  private updateWorldPath(i: number): void {
+    const path: number[] = [];
+    for (let b = i, guard = 0; b >= 0 && b < this.count && guard < this.count; guard++) {
+      path.push(b);
+      const p = this.bones[b].parent;
+      if (p === b) break;
+      b = p;
+    }
+    for (let k = path.length - 1; k >= 0; k--) this.updateWorld(path[k]);
+  }
+
   private updateWorld(i: number): void {
     const p = this.bones[i].parent;
     this.world[i].compose(this.localT[i], this.localR[i], ONE);
@@ -180,6 +207,8 @@ export class PoseSolver {
     const links = ik.links.filter((l) => l.bone >= 0 && l.bone < this.count);
     if (links.length === 0) return;
 
+    // The effector must reflect this frame before the first CCD step.
+    this.updateWorldPath(target);
     const goal = this.worldPosition(ikIndex, new Vector3());
     const effector = new Vector3();
     const inv = new Matrix4();

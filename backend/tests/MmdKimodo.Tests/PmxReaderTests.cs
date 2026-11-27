@@ -21,7 +21,7 @@ public class PmxReaderTests
         Assert.Equal(4, m.Materials.Length);
         Assert.Equal(m.Indices.Length, m.Materials.Sum(x => x.IndexCount));
         Assert.Equal(23, m.Bones.Length);
-        Assert.Equal(2, m.Morphs.Length);
+        Assert.Equal(3, m.Morphs.Length);
 
         var center = m.Bones.Single(b => b.Name == "センター");
         Assert.Equal(new Vector3(0, 8, 0), center.Position);
@@ -40,6 +40,13 @@ public class PmxReaderTests
         Assert.NotEmpty(m.Morphs[0].VertexOffsets);
         Assert.Equal(PmxMorphType.Group, m.Morphs[1].Type);
         Assert.Equal(new PmxGroupMorphOffset(0, 0.5f), m.Morphs[1].GroupOffsets.Single());
+        Assert.Equal(PmxMorphType.Material, m.Morphs[2].Type);
+        var blush = m.Morphs[2].MaterialOffsets.Single();
+        Assert.Equal(0, blush.Material);
+        Assert.Equal(PmxMaterialMorphOp.Multiply, blush.Op);
+        Assert.Equal(new Vector4(1, 0.75f, 0.75f, 1), blush.Diffuse);
+        Assert.Equal(1, blush.EdgeSize);
+        Assert.Equal(Vector4.One, blush.ToonFactor);
 
         Assert.Equal(5, m.RigidBodies.Length);
         var head = m.RigidBodies[0];

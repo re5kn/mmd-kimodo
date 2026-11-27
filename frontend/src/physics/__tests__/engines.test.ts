@@ -163,6 +163,23 @@ describe.each(ENGINES)('%s', (_name, createEngine) => {
     expect(restingY([0, 0.5])).toBeLessThan(9.6);
   });
 
+  test.each(['standard', 'high'] as const)('%s quality: swinging hair settles, quality can change mid-run', (quality) => {
+    const model = ponytail();
+    const engine = createEngine();
+    engine.setQuality(quality);
+    engine.setup(model);
+    const solver = new PoseSolver(model.bones);
+    solver.motionR[2].setFromAxisAngle(new Vector3(1, 0, 0), Math.PI / 3);
+    solver.solve();
+    engine.reset(solver.world);
+    run(engine, solver, 2);
+    engine.setQuality(quality === 'high' ? 'standard' : 'high');
+    run(engine, solver, 2);
+    expect(solver.worldPosition(2).distanceTo(new Vector3(0, 10, 1))).toBeLessThan(0.05);
+    expect(solver.worldPosition(3).distanceTo(new Vector3(0, 8, 1))).toBeLessThan(0.3);
+    engine.dispose();
+  });
+
   test('swinging hair settles back under gravity, setup can be replaced', () => {
     const model = ponytail();
     const engine = createEngine();

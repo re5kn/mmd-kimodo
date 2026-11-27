@@ -7,12 +7,16 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { MaterialFlags, type ModelDto } from '../api/types';
 import { decodeFloat32, decodeUint16, decodeUint32 } from '../mmd/decode';
 import { MorphApplier } from '../mmd/morph';
+import { MaterialMorphEvaluator, type MaterialMorphState } from '../mmd/materialMorph';
 import { PoseSolver } from '../mmd/pose';
 import { sampleBoneTrack, sampleIkEnabled, sampleMorphTrack, type BoundMotion } from '../mmd/motion';
-import { createPhysicsEngine, type PhysicsEngine, type PhysicsEngineKind } from '../physics';
+import { createPhysicsEngine, type PhysicsEngine, type PhysicsEngineKind, type PhysicsQuality } from '../physics';
 import { PhysicsRig } from '../physics/rig';
+import { StillnessDetector } from '../physics/stillness';
 import { RigidBodyHelper } from './RigidBodyHelper';
+import { applyMaterialMorphState } from './materialMorphApply';
 import { physicsStatusStore } from './physicsStatus';
+import { morphControlStore } from './morphControl';
 import {
   createPresetMaterial,
   type DisplayPreset,
@@ -42,6 +46,10 @@ export interface ViewerOptions {
   enableIk: boolean;
   enablePhysics: boolean;
   physicsEngine: PhysicsEngineKind;
+  /** Solver accuracy; 'high' jitters and stretches less but costs 2-4x the time. */
+  physicsQuality: PhysicsQuality;
+  /** Hold the physics result while the model does not move (stops the endless jitter, Issue #25). */
+  freezePhysicsWhenStill: boolean;
   showRigidBodies: boolean;
   displayPreset: DisplayPreset;
   showShadows: boolean;
@@ -56,6 +64,8 @@ export const DEFAULT_VIEWER_OPTIONS: ViewerOptions = {
   enableIk: true,
   enablePhysics: true,
   physicsEngine: 'ammo',
+  physicsQuality: 'standard',
+  freezePhysicsWhenStill: true,
   showRigidBodies: false,
   displayPreset: 'mmd',
   showShadows: true,
@@ -103,6 +113,9 @@ export class MmdViewer {
   private solver: PoseSolver | null = null;
   private morphs: MorphApplier | null = null;
   private morphWeights = new Float32Array(0);
+  private materialMorphs: MaterialMorphEvaluator | null = null;
+  /** Latest material morph values (material index → state), applied to whichever preset is shown. */
+  private materialMorphStates: Map<number, MaterialMorphState> | null = null;
   private motion: BoundMotion | null = null;
   private frame = 0;
   private disposed = false;
@@ -113,11 +126,14 @@ export class MmdViewer {
   private physicsNeedsReset = true;
   private physicsTarget: THREE.Matrix4[] = [];
   private rig: PhysicsRig | null = null;
+  private stillness: StillnessDetector | null = null;
+  private publishedFrozen = false;
   private rigidBodyHelper: RigidBodyHelper | null = null;
   private lastTick = 0;
   private readonly unsubscribeReset: () => void;
   /** Temporary lighting tuner (see lightingTuner.ts). */
   private readonly unsubscribeTuner: () => void;
+  private readonly unsubscribeMorphs: () => void;
 
   options: ViewerOptions = { ...DEFAULT_VIEWER_OPTIONS };
 
@@ -165,6 +181,7 @@ export class MmdViewer {
     this.loop();
     this.unsubscribeReset = physicsStatusStore.onResetRequest(() => this.resetPhysics());
     this.unsubscribeTuner = lightingTunerStore.subscribe(() => this.applyPresetLighting());
+    this.unsubscribeMorphs = morphControlStore.subscribe(() => this.applyFrame());
     void this.syncPhysicsEngine();
   }
 
@@ -173,6 +190,7 @@ export class MmdViewer {
     this.resizeObserver.disconnect();
     this.unsubscribeReset();
     this.unsubscribeTuner();
+    this.unsubscribeMorphs();
     this.clearModel();
     this.physicsRequest++;
     this.physics?.dispose();
@@ -220,9 +238,18 @@ export class MmdViewer {
     if (o.displayPreset !== prev.displayPreset) {
       this.applyPresetLighting();
       if (this.mesh) this.mesh.material = this.materialsFor(o.displayPreset);
+      this.applyMaterialMorphs();
     }
     if (o.enablePhysics !== prev.enablePhysics || o.physicsEngine !== prev.physicsEngine) {
       void this.syncPhysicsEngine();
+    } else if (o.physicsQuality !== prev.physicsQuality) {
+      // Takes effect from the next step; the swing continues.
+      this.physics?.setQuality(o.physicsQuality);
+      this.stillness?.reset();
+    } else if (o.freezePhysicsWhenStill !== prev.freezePhysicsWhenStill) {
+      // Resume (or start watching) without restarting the simulation.
+      this.stillness?.reset();
+      this.syncFrozenStatus();
     } else if (o.enableIk !== prev.enableIk || o.showRigidBodies !== prev.showRigidBodies) {
       this.physicsNeedsReset = true;
       this.applyFrame();
@@ -322,6 +349,7 @@ export class MmdViewer {
           color: [m.edgeColor[0], m.edgeColor[1], m.edgeColor[2]],
           alpha: m.edgeColor[3],
           visible: (m.flags & MaterialFlags.Edge) !== 0 && m.edgeSize > 0 && m.diffuse[3] > 0,
+          enabled: (m.flags & MaterialFlags.Edge) !== 0,
         },
       };
     });
@@ -361,9 +389,12 @@ export class MmdViewer {
 
     this.morphs = new MorphApplier(model, positions.slice(), positions);
     this.morphWeights = new Float32Array(model.morphs.length);
+    this.materialMorphs = new MaterialMorphEvaluator(model);
+    this.materialMorphStates = null;
 
     const physicsModel = { bones: model.bones, rigidBodies: model.rigidBodies ?? [], joints: model.joints ?? [] };
     this.rig = new PhysicsRig(physicsModel);
+    this.stillness = StillnessDetector.forRig(this.rig);
     this.physicsTarget = model.bones.map(() => new THREE.Matrix4());
     this.rigidBodyHelper = new RigidBodyHelper(physicsModel.rigidBodies);
     this.rigidBodyHelper.visible = this.options.showRigidBodies;
@@ -424,6 +455,7 @@ export class MmdViewer {
           engine.dispose();
           return;
         }
+        engine.setQuality(this.options.physicsQuality);
         this.physics = engine;
       } catch (e) {
         if (request !== this.physicsRequest) return;
@@ -447,13 +479,23 @@ export class MmdViewer {
   }
 
   private publishPhysicsStatus(state: 'off' | 'loading' | 'ready' | 'error', message?: string): void {
+    if (state !== 'ready') this.publishedFrozen = false;
     physicsStatusStore.set({
       state,
       engine: state === 'off' ? null : this.options.physicsEngine,
       bodyCount: this.model?.rigidBodies?.length ?? 0,
       jointCount: this.model?.joints?.length ?? 0,
       message,
+      frozen: this.publishedFrozen,
     });
+  }
+
+  /** Tells the sidebar when the simulation is held because the model is still. */
+  private syncFrozenStatus(): void {
+    const frozen = !!(this.options.freezePhysicsWhenStill && this.physicsActive() && this.stillness?.frozen);
+    if (frozen === this.publishedFrozen) return;
+    this.publishedFrozen = frozen;
+    physicsStatusStore.set({ ...physicsStatusStore.get(), frozen });
   }
 
   /**
@@ -477,19 +519,28 @@ export class MmdViewer {
         if (track) this.morphWeights[i] = sampleMorphTrack(track, this.frame);
       }
     }
+    for (const [i, w] of morphControlStore.get()) {
+      if (i < this.morphWeights.length) this.morphWeights[i] = w;
+    }
     const physics = this.physicsActive() ? this.physics! : null;
     if (!physics) {
       solver.solve(this.options.enableIk);
     } else {
       solver.solve(this.options.enableIk, 'beforePhysics');
+      const stillness = this.options.freezePhysicsWhenStill ? this.stillness : null;
       if (this.physicsNeedsReset) {
         physics.reset(solver.world);
         this.physicsNeedsReset = false;
-      } else {
+        this.stillness?.reset();
+        physics.getBoneTransforms(this.physicsTarget);
+      } else if (!stillness?.beforeStep(solver.world, dt)) {
+        // Frozen: physicsTarget still holds the last result.
         physics.setBoneTransforms(solver.world);
         physics.step(dt);
+        physics.getBoneTransforms(this.physicsTarget);
+        stillness?.afterStep(this.physicsTarget);
       }
-      physics.getBoneTransforms(this.physicsTarget);
+      this.syncFrozenStatus();
       solver.applyPhysics(physics.boneModes, this.physicsTarget);
       solver.solve(this.options.enableIk, 'afterPhysics');
     }
@@ -503,6 +554,25 @@ export class MmdViewer {
     }
     if (this.morphs?.apply(this.morphWeights)) {
       mesh.geometry.getAttribute('position').needsUpdate = true;
+    }
+    const states = this.materialMorphs?.evaluate(this.morphWeights);
+    if (states) {
+      this.materialMorphStates = states;
+      this.applyMaterialMorphs();
+    }
+    this.needsRender = true;
+  }
+
+  /** Shows the latest material morph values on the current preset's materials. */
+  private applyMaterialMorphs(): void {
+    const states = this.materialMorphStates;
+    if (!states || !this.mesh) return;
+    const preset = this.options.displayPreset;
+    const mats = this.materialsFor(preset);
+    for (const [i, state] of states) {
+      const mat = mats[i];
+      const src = this.materialSources[i];
+      if (mat && src) applyMaterialMorphState(preset, mat, src, state);
     }
     this.needsRender = true;
   }
@@ -594,12 +664,17 @@ export class MmdViewer {
     }
     this.rigidBodyHelper = null;
     this.rig = null;
+    this.stillness = null;
     this.mesh = null;
     this.skeletonHelper = null;
     this.model = null;
     this.solver = null;
     this.morphs = null;
+    this.materialMorphs = null;
+    this.materialMorphStates = null;
     this.bones = [];
+    // Hand-set weights belong to this model's morph indices.
+    morphControlStore.reset();
     this.bonePoints = [];
     this.needsRender = true;
   }

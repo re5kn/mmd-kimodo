@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CLOTH_TILE, HAIR_TILE } from './detailMaps';
 import type { SurfaceKind } from './surfaceKind';
+import { usePaintedSphere } from './paintedSphere';
 import { MMD_LIGHT_DIRECTION, createMmdMaterial, type MmdLightUniform } from './mmdShading';
 
 /**
@@ -45,8 +46,12 @@ export interface PresetMaterialSource {
   toon?: THREE.Texture | null;
   /** Sphere map and PMX sphere mode (see SphereMode). */
   sphere?: { map: THREE.Texture; mode: number } | null;
-  /** OutlineEffect parameters (shared by every preset). */
-  outline: { thickness: number; color: number[]; alpha: number; visible: boolean };
+  /**
+   * OutlineEffect parameters (shared by every preset). `enabled`: the PMX
+   * edge flag, so a material morph can show the edge of a material that
+   * starts hidden. Default: same as `visible`.
+   */
+  outline: { thickness: number; color: number[]; alpha: number; visible: boolean; enabled?: boolean };
   /** What the material represents (only used by surface-aware presets). Default: cloth. */
   kind?: SurfaceKind;
   /** Model units per UV unit, for tiling detail maps at a fixed size (0: unknown). */
@@ -79,6 +84,9 @@ function common(src: PresetMaterialSource) {
   return {
     name: src.name,
     opacity: src.diffuse[3],
+    // Fully transparent materials (shown later by a material morph) are
+    // skipped, so they cast no shadow either.
+    visible: src.diffuse[3] > 0,
     transparent: true,
     alphaTest: 0.001,
     depthWrite: true,
@@ -153,14 +161,20 @@ export function createPresetMaterial(preset: DisplayPreset, src: PresetMaterialS
       mat = createFigureMaterial(src);
       break;
   }
+  mat.userData.outlineParameters = outlineParameters(preset, src.outline);
+  return mat;
+}
+
+/** OutlineEffect parameters of a preset for a material's edge. */
+export function outlineParameters(preset: DisplayPreset, outline: PresetMaterialSource['outline']) {
   // Effect stacks usually draw thinner lines than plain MMD; figures have none.
   const outlineScale = preset === 'real' ? 0.5 : 1;
-  mat.userData.outlineParameters = {
-    ...src.outline,
-    thickness: src.outline.thickness * outlineScale,
-    visible: src.outline.visible && preset !== 'figure',
+  return {
+    thickness: outline.thickness * outlineScale,
+    color: outline.color,
+    alpha: outline.alpha,
+    visible: outline.visible && preset !== 'figure',
   };
-  return mat;
 }
 
 /** Skin tuning for the 'real' preset (see useSkinScatter). */
@@ -224,6 +238,45 @@ function tiledDetail(base: THREE.Texture, uvDensity: number, across: number, alo
 }
 
 /**
+ * Color grading built into the 'real' preset: the same values as the
+ * 色鮮やか look (looks.ts), so the vivid colors show without post effects.
+ * Choosing 色鮮やか as well applies the grading twice.
+ */
+export const REAL_GRADE = { saturation: 1.35, contrast: 1.12, brightness: 1.03 };
+
+/** Shader line the grading is inserted before (linear color, before tone mapping). */
+export const GRADE_ANCHOR = '#include <tonemapping_fragment>';
+
+/**
+ * Grades a material's final color in linear light just before tone mapping,
+ * with the same formula as the post-effects grading (FINAL_FRAGMENT):
+ * brightness, contrast around middle gray 0.18, then saturation.
+ */
+function useBuiltInGrade(mat: THREE.Material, g: typeof REAL_GRADE): void {
+  const previous = mat.onBeforeCompile.bind(mat);
+  const previousKey = mat.customProgramCacheKey.bind(mat);
+  const f = (v: number) => v.toFixed(4);
+  mat.onBeforeCompile = (shader, renderer) => {
+    previous(shader, renderer);
+    if (!shader.fragmentShader.includes(GRADE_ANCHOR)) {
+      console.warn('real preset grading: three.js shader changed; colors are not graded');
+      return;
+    }
+    shader.fragmentShader = shader.fragmentShader.replace(
+      GRADE_ANCHOR,
+      `{
+    vec3 gradeC = max( gl_FragColor.rgb * ${f(g.brightness)}, 0.0 );
+    gradeC = 0.18 * pow( gradeC / 0.18, vec3( ${f(g.contrast)} ) );
+    float gradeL = dot( gradeC, vec3( 0.2126, 0.7152, 0.0722 ) );
+    gl_FragColor.rgb = max( mix( vec3( gradeL ), gradeC, ${f(g.saturation)} ), 0.0 );
+  }
+  ${GRADE_ANCHOR}`,
+    );
+  };
+  mat.customProgramCacheKey = () => `${previousKey()}-real-grade`;
+}
+
+/**
  * 'real' preset: physically based surfaces chosen per material kind, in the
  * spirit of MMD effect stacks such as ray-mmd (fabric sheen and weave,
  * anisotropic hair highlights, soft skin).
@@ -234,7 +287,9 @@ function createRealMaterial(src: PresetMaterialSource, shared: PresetShared): TH
   const color = srgb(r, g, b);
   if (kind === 'decal') {
     // Eyes and painted overlays stay exactly as drawn.
-    return new THREE.MeshBasicMaterial({ ...common(src), color, map: src.map, toneMapped: false });
+    const decal = new THREE.MeshBasicMaterial({ ...common(src), color, map: src.map, toneMapped: false });
+    useBuiltInGrade(decal, REAL_GRADE);
+    return decal;
   }
   const mat = new THREE.MeshPhysicalMaterial({ ...common(src), color, map: src.map, metalness: 0 });
   let detail: THREE.Texture | null = null;
@@ -255,10 +310,7 @@ function createRealMaterial(src: PresetMaterialSource, shared: PresetShared): TH
       // Highlights stretch across the strands (U), like a band around the head.
       mat.anisotropy = 0.6;
       mat.anisotropyRotation = 0;
-      // Soft lilac-white sheen lifts dark hair the way effect stacks do.
-      mat.sheen = 0.6;
-      mat.sheenRoughness = 0.55;
-      mat.sheenColor.setRGB(0.85, 0.8, 0.95);
+      // No sheen: a whitish sheen veils dark hair and washes its color out.
       if (shared.detailMaps) detail = tiledDetail(shared.detailMaps.hair, src.uvDensity ?? 0, HAIR_TILE.across, HAIR_TILE.along);
       mat.normalScale.set(0.15, 0.15);
       break;
@@ -275,11 +327,20 @@ function createRealMaterial(src: PresetMaterialSource, shared: PresetShared): TH
       mat.metalness = 0.85;
       mat.roughness = 0.3;
       break;
+    case 'gem':
+      // Polished stone: sharp highlights, and the picture from its sphere map.
+      mat.roughness = 0.15;
+      mat.specularIntensity = 1;
+      mat.clearcoat = 1;
+      mat.clearcoatRoughness = 0.05;
+      usePaintedSphere(mat, src.sphere);
+      break;
   }
   if (detail) {
     mat.normalMap = detail;
     mat.addEventListener('dispose', () => detail.dispose());
   }
+  useBuiltInGrade(mat, REAL_GRADE);
   return mat;
 }
 
@@ -295,6 +356,7 @@ export const FIGURE_FINISH: Record<Exclude<SurfaceKind, 'decal'>, { roughness: n
   // Clothes: semi-gloss paint.
   cloth: { roughness: 0.6, clearcoat: 0.2, clearcoatRoughness: 0.4, specular: 0.3 },
   metal: { roughness: 0.25, clearcoat: 1, clearcoatRoughness: 0.05, specular: 1 },
+  gem: { roughness: 0.15, clearcoat: 1, clearcoatRoughness: 0.05, specular: 1 },
 };
 
 /** Warm translucency of PVC skin: light that enters lifts the shadow side (multiplied by the texture). */
@@ -326,6 +388,7 @@ function createFigureMaterial(src: PresetMaterialSource): THREE.Material {
   mat.clearcoatRoughness = f.clearcoatRoughness;
   mat.specularIntensity = f.specular;
   if (kind === 'metal') mat.metalness = 0.8;
+  if (kind === 'gem') usePaintedSphere(mat, src.sphere);
   if (kind === 'skin') {
     mat.emissiveMap = src.map;
     mat.emissive.setRGB(...FIGURE_SKIN_GLOW);
@@ -355,8 +418,9 @@ export function presetLighting(preset: DisplayPreset): PresetLighting {
     case 'clay':
       return { hemisphere: 0.4, skyColor: 0xffffff, groundColor: 0x8899aa, directional: 2.2, environment: 0.6, toneMapping: THREE.NeutralToneMapping, exposure: 1, lightFrom: DEFAULT_LIGHT_FROM };
     case 'real':
-      // Strong key light, cool sky fill and filmic tone mapping.
-      return { hemisphere: 0.45, skyColor: 0xdde4ff, groundColor: 0x6e6964, directional: 2.6, environment: 0.35, toneMapping: THREE.ACESFilmicToneMapping, exposure: 1, lightFrom: DEFAULT_LIGHT_FROM };
+      // Strong key light, cool sky fill and filmic tone mapping (hand-tuned: the
+      // light is raised and exposure lowered so highlights keep their color).
+      return { hemisphere: 0.6, skyColor: 0xdde4ff, groundColor: 0x6e6964, directional: 4.2, environment: 0.5, toneMapping: THREE.ACESFilmicToneMapping, exposure: 0.5, lightFrom: DEFAULT_LIGHT_FROM };
     case 'figure':
       // Soft light-box look (hand-tuned): strong fill for a key:fill of about 3:1, and
       // lowered exposure so highlights stay below Neutral's roll-off and keep their color.
