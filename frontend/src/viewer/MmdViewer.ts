@@ -7,12 +7,14 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { MaterialFlags, type ModelDto } from '../api/types';
 import { decodeFloat32, decodeUint16, decodeUint32 } from '../mmd/decode';
 import { MorphApplier } from '../mmd/morph';
+import { MaterialMorphEvaluator, type MaterialMorphState } from '../mmd/materialMorph';
 import { PoseSolver } from '../mmd/pose';
 import { sampleBoneTrack, sampleIkEnabled, sampleMorphTrack, type BoundMotion } from '../mmd/motion';
 import { createPhysicsEngine, type PhysicsEngine, type PhysicsEngineKind, type PhysicsQuality } from '../physics';
 import { PhysicsRig } from '../physics/rig';
 import { StillnessDetector } from '../physics/stillness';
 import { RigidBodyHelper } from './RigidBodyHelper';
+import { applyMaterialMorphState } from './materialMorphApply';
 import { physicsStatusStore } from './physicsStatus';
 import {
   createPresetMaterial,
@@ -110,6 +112,9 @@ export class MmdViewer {
   private solver: PoseSolver | null = null;
   private morphs: MorphApplier | null = null;
   private morphWeights = new Float32Array(0);
+  private materialMorphs: MaterialMorphEvaluator | null = null;
+  /** Latest material morph values (material index → state), applied to whichever preset is shown. */
+  private materialMorphStates: Map<number, MaterialMorphState> | null = null;
   private motion: BoundMotion | null = null;
   private frame = 0;
   private disposed = false;
@@ -225,6 +230,7 @@ export class MmdViewer {
     if (o.displayPreset !== prev.displayPreset) {
       this.applyPresetLighting();
       if (this.mesh) this.mesh.material = this.materialsFor(o.displayPreset);
+      this.applyMaterialMorphs();
     }
     if (o.enablePhysics !== prev.enablePhysics || o.physicsEngine !== prev.physicsEngine) {
       void this.syncPhysicsEngine();
@@ -335,6 +341,7 @@ export class MmdViewer {
           color: [m.edgeColor[0], m.edgeColor[1], m.edgeColor[2]],
           alpha: m.edgeColor[3],
           visible: (m.flags & MaterialFlags.Edge) !== 0 && m.edgeSize > 0 && m.diffuse[3] > 0,
+          enabled: (m.flags & MaterialFlags.Edge) !== 0,
         },
       };
     });
@@ -374,6 +381,8 @@ export class MmdViewer {
 
     this.morphs = new MorphApplier(model, positions.slice(), positions);
     this.morphWeights = new Float32Array(model.morphs.length);
+    this.materialMorphs = new MaterialMorphEvaluator(model);
+    this.materialMorphStates = null;
 
     const physicsModel = { bones: model.bones, rigidBodies: model.rigidBodies ?? [], joints: model.joints ?? [] };
     this.rig = new PhysicsRig(physicsModel);
@@ -535,6 +544,25 @@ export class MmdViewer {
     if (this.morphs?.apply(this.morphWeights)) {
       mesh.geometry.getAttribute('position').needsUpdate = true;
     }
+    const states = this.materialMorphs?.evaluate(this.morphWeights);
+    if (states) {
+      this.materialMorphStates = states;
+      this.applyMaterialMorphs();
+    }
+    this.needsRender = true;
+  }
+
+  /** Shows the latest material morph values on the current preset's materials. */
+  private applyMaterialMorphs(): void {
+    const states = this.materialMorphStates;
+    if (!states || !this.mesh) return;
+    const preset = this.options.displayPreset;
+    const mats = this.materialsFor(preset);
+    for (const [i, state] of states) {
+      const mat = mats[i];
+      const src = this.materialSources[i];
+      if (mat && src) applyMaterialMorphState(preset, mat, src, state);
+    }
     this.needsRender = true;
   }
 
@@ -631,6 +659,8 @@ export class MmdViewer {
     this.model = null;
     this.solver = null;
     this.morphs = null;
+    this.materialMorphs = null;
+    this.materialMorphStates = null;
     this.bones = [];
     this.bonePoints = [];
     this.needsRender = true;

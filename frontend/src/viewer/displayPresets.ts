@@ -46,8 +46,12 @@ export interface PresetMaterialSource {
   toon?: THREE.Texture | null;
   /** Sphere map and PMX sphere mode (see SphereMode). */
   sphere?: { map: THREE.Texture; mode: number } | null;
-  /** OutlineEffect parameters (shared by every preset). */
-  outline: { thickness: number; color: number[]; alpha: number; visible: boolean };
+  /**
+   * OutlineEffect parameters (shared by every preset). `enabled`: the PMX
+   * edge flag, so a material morph can show the edge of a material that
+   * starts hidden. Default: same as `visible`.
+   */
+  outline: { thickness: number; color: number[]; alpha: number; visible: boolean; enabled?: boolean };
   /** What the material represents (only used by surface-aware presets). Default: cloth. */
   kind?: SurfaceKind;
   /** Model units per UV unit, for tiling detail maps at a fixed size (0: unknown). */
@@ -154,14 +158,20 @@ export function createPresetMaterial(preset: DisplayPreset, src: PresetMaterialS
       mat = createFigureMaterial(src);
       break;
   }
+  mat.userData.outlineParameters = outlineParameters(preset, src.outline);
+  return mat;
+}
+
+/** OutlineEffect parameters of a preset for a material's edge. */
+export function outlineParameters(preset: DisplayPreset, outline: PresetMaterialSource['outline']) {
   // Effect stacks usually draw thinner lines than plain MMD; figures have none.
   const outlineScale = preset === 'real' ? 0.5 : 1;
-  mat.userData.outlineParameters = {
-    ...src.outline,
-    thickness: src.outline.thickness * outlineScale,
-    visible: src.outline.visible && preset !== 'figure',
+  return {
+    thickness: outline.thickness * outlineScale,
+    color: outline.color,
+    alpha: outline.alpha,
+    visible: outline.visible && preset !== 'figure',
   };
-  return mat;
 }
 
 /** Skin tuning for the 'real' preset (see useSkinScatter). */
