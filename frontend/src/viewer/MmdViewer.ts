@@ -15,6 +15,7 @@ import { PhysicsRig } from '../physics/rig';
 import { StillnessDetector } from '../physics/stillness';
 import { RigidBodyHelper } from './RigidBodyHelper';
 import { applyMaterialMorphState } from './materialMorphApply';
+import { combineMaterialStates, materialEditStore } from './materialEdits';
 import { physicsStatusStore } from './physicsStatus';
 import { morphControlStore } from './morphControl';
 import {
@@ -116,6 +117,12 @@ export class MmdViewer {
   private materialMorphs: MaterialMorphEvaluator | null = null;
   /** Latest material morph values (material index → state), applied to whichever preset is shown. */
   private materialMorphStates: Map<number, MaterialMorphState> | null = null;
+  /**
+   * Materials ever changed by morphs or hand edits for this model: they are
+   * re-applied (back to PMX values if nothing changes them now), so every
+   * preset's cached materials stay in step.
+   */
+  private changedMaterials = new Set<number>();
   private motion: BoundMotion | null = null;
   private frame = 0;
   private disposed = false;
@@ -134,6 +141,7 @@ export class MmdViewer {
   /** Temporary lighting tuner (see lightingTuner.ts). */
   private readonly unsubscribeTuner: () => void;
   private readonly unsubscribeMorphs: () => void;
+  private readonly unsubscribeMaterialEdits: () => void;
 
   options: ViewerOptions = { ...DEFAULT_VIEWER_OPTIONS };
 
@@ -182,6 +190,7 @@ export class MmdViewer {
     this.unsubscribeReset = physicsStatusStore.onResetRequest(() => this.resetPhysics());
     this.unsubscribeTuner = lightingTunerStore.subscribe(() => this.applyPresetLighting());
     this.unsubscribeMorphs = morphControlStore.subscribe(() => this.applyFrame());
+    this.unsubscribeMaterialEdits = materialEditStore.subscribe(() => this.applyMaterialMorphs());
     void this.syncPhysicsEngine();
   }
 
@@ -191,6 +200,7 @@ export class MmdViewer {
     this.unsubscribeReset();
     this.unsubscribeTuner();
     this.unsubscribeMorphs();
+    this.unsubscribeMaterialEdits();
     this.clearModel();
     this.physicsRequest++;
     this.physics?.dispose();
@@ -563,10 +573,15 @@ export class MmdViewer {
     this.needsRender = true;
   }
 
-  /** Shows the latest material morph values on the current preset's materials. */
+  /**
+   * Shows the latest material morph values, with the material panel's hand
+   * edits on top, on the current preset's materials.
+   */
   private applyMaterialMorphs(): void {
-    const states = this.materialMorphStates;
-    if (!states || !this.mesh) return;
+    const { model, mesh } = this;
+    if (!model || !mesh) return;
+    const states = combineMaterialStates(model.materials, this.materialMorphStates, materialEditStore.get(), this.changedMaterials);
+    if (states.size === 0) return;
     const preset = this.options.displayPreset;
     const mats = this.materialsFor(preset);
     for (const [i, state] of states) {
@@ -574,6 +589,7 @@ export class MmdViewer {
       const src = this.materialSources[i];
       if (mat && src) applyMaterialMorphState(preset, mat, src, state);
     }
+    for (const i of states.keys()) this.changedMaterials.add(i);
     this.needsRender = true;
   }
 
@@ -672,9 +688,11 @@ export class MmdViewer {
     this.morphs = null;
     this.materialMorphs = null;
     this.materialMorphStates = null;
+    this.changedMaterials = new Set();
     this.bones = [];
-    // Hand-set weights belong to this model's morph indices.
+    // Hand-set weights and material edits belong to this model's indices.
     morphControlStore.reset();
+    materialEditStore.reset();
     this.bonePoints = [];
     this.needsRender = true;
   }
