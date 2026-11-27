@@ -6,7 +6,7 @@ import type { ViewerOptions } from '../viewer/MmdViewer';
 import { DISPLAY_PRESETS } from '../viewer/displayPresets';
 import { EffectsSection } from './EffectsSection';
 import { LightingSection } from './LightingSection';
-import { MaterialMorphSection } from './MaterialMorphSection';
+import { MorphSection } from './MorphSection';
 import { PhysicsSection } from './PhysicsSection';
 
 interface Props {
@@ -186,7 +186,7 @@ export function Sidebar(p: Props) {
 
       <PhysicsSection model={m} options={p.options} onOptions={p.onOptions} />
 
-      <MaterialMorphSection model={m} />
+      <MorphSection model={m} />
 
       <div className="status" role="status">
         {p.busy && <div className="busy">{p.busy}</div>}

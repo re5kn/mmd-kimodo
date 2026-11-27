@@ -149,22 +149,3 @@ export class MaterialMorphEvaluator {
   }
 }
 
-/**
- * Morphs that change materials: material morphs and group morphs that
- * contain one (directly or through nested groups).
- */
-export function materialMorphIndices(model: ModelDto): number[] {
-  const memo = new Map<number, boolean>();
-  const changesMaterials = (i: number, depth: number): boolean => {
-    const m = model.morphs[i];
-    if (!m || depth > 8) return false;
-    const known = memo.get(i);
-    if (known !== undefined) return known;
-    let result = false;
-    if (m.type === MORPH_MATERIAL) result = (m.material?.length ?? 0) > 0;
-    else if (m.type === MORPH_GROUP && m.group) result = m.group.some((g) => changesMaterials(g.morph, depth + 1));
-    memo.set(i, result);
-    return result;
-  };
-  return model.morphs.map((_, i) => i).filter((i) => changesMaterials(i, 0));
-}

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { MaterialDto, MaterialMorphOffsetDto, ModelDto, MorphDto } from '../../api/types';
-import { MaterialMorphEvaluator, expandMorphWeights, materialMorphIndices } from '../materialMorph';
+import { MaterialMorphEvaluator, expandMorphWeights } from '../materialMorph';
 
 const material = (diffuse: [number, number, number, number]): MaterialDto =>
   ({ name: 'm', nameEn: '', diffuse, specular: [0.5, 0.5, 0.5], specularity: 10, ambient: [0.4, 0.4, 0.4], edgeColor: [0, 0, 0, 1], edgeSize: 1 }) as MaterialDto;
@@ -68,11 +68,5 @@ describe('material morphs', () => {
     const e = new MaterialMorphEvaluator(model([material([1, 1, 1, 1])], [morph('あ', 1)]));
     expect(e.hasMorphs).toBe(false);
     expect(e.evaluate([1])).toBeNull();
-  });
-
-  test('lists morphs that change materials, through groups too', () => {
-    expect(materialMorphIndices(m)).toEqual([0, 1, 2, 3]);
-    const vertexOnly = model([material([1, 1, 1, 1])], [morph('あ', 1), morph('あ半分', 0, { group: [{ morph: 0, ratio: 0.5 }] })]);
-    expect(materialMorphIndices(vertexOnly)).toEqual([]);
   });
 });
