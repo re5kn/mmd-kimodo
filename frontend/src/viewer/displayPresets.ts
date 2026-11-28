@@ -3,6 +3,7 @@ import { CLOTH_TILE, HAIR_TILE } from './detailMaps';
 import type { SurfaceKind } from './surfaceKind';
 import { usePaintedSphere } from './paintedSphere';
 import { MMD_LIGHT_DIRECTION, createMmdMaterial, type MmdLightUniform } from './mmdShading';
+import { useSkinLight, type SkinLightUniforms } from './skinLight';
 
 /**
  * Display presets (Issue #11 B1): the same model drawn with different
@@ -61,6 +62,8 @@ export interface PresetMaterialSource {
 export interface PresetShared {
   /** Light color of the MMD-style shading, shared so the lighting panel can change it live. */
   mmdLightColor?: MmdLightUniform;
+  /** Skin light colors (Issue #29), shared so the panel can change them live. */
+  skinLight?: SkinLightUniforms;
   /** Tileable detail normal maps for the 'real' preset. */
   detailMaps?: { cloth: THREE.Texture; hair: THREE.Texture };
 }
@@ -125,6 +128,7 @@ export function createPresetMaterial(preset: DisplayPreset, src: PresetMaterialS
         },
         common(src),
         shared.mmdLightColor,
+        shared.skinLight,
       );
       break;
     case 'flat':
@@ -161,6 +165,8 @@ export function createPresetMaterial(preset: DisplayPreset, src: PresetMaterialS
       mat = createFigureMaterial(src);
       break;
   }
+  // Lit three.js materials get the skin light switch (MMD shading has its own; unlit ones need none).
+  if (shared.skinLight && mat instanceof THREE.MeshStandardMaterial) useSkinLight(mat, shared.skinLight);
   mat.userData.outlineParameters = outlineParameters(preset, src.outline);
   return mat;
 }

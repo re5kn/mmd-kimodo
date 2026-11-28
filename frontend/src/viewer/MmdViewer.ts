@@ -31,6 +31,7 @@ import { SUB_UV_ATTRIBUTE, SphereMode, createMmdLightUniform } from './mmdShadin
 import { DEFAULT_LIGHTING, resolveLighting, type LightingSettings } from './lighting';
 import { DEFAULT_EFFECTS, PostEffects, effectsActive, resolveToneMapping, type EffectSettings } from './postEffects';
 import { ShadowRig, shadowBounds } from './shadows';
+import { createSkinLightUniforms, isSkinMaterial, skinLightStore, skinLightSwitch, updateSkinLightUniforms } from './skinLight';
 
 /**
  * PMX space is left-handed (model faces -Z). three.js is right-handed.
@@ -98,6 +99,7 @@ export class MmdViewer {
   /** Fill and rim lights of the three-point setup. */
   private readonly extraLights: THREE.DirectionalLight[];
   private readonly mmdLightColor = createMmdLightUniform();
+  private readonly skinLight = createSkinLightUniforms();
   private readonly shadowSphere = new THREE.Sphere();
   private bonePoints: THREE.Vector3[] = [];
   private environment: THREE.Texture | null = null;
@@ -140,6 +142,7 @@ export class MmdViewer {
   private readonly unsubscribeReset: () => void;
   private readonly unsubscribeMorphs: () => void;
   private readonly unsubscribeMaterialEdits: () => void;
+  private readonly unsubscribeSkinLight: () => void;
 
   options: ViewerOptions = { ...DEFAULT_VIEWER_OPTIONS };
 
@@ -188,6 +191,7 @@ export class MmdViewer {
     this.unsubscribeReset = physicsStatusStore.onResetRequest(() => this.resetPhysics());
     this.unsubscribeMorphs = morphControlStore.subscribe(() => this.applyFrame());
     this.unsubscribeMaterialEdits = materialEditStore.subscribe(() => this.applyMaterialMorphs());
+    this.unsubscribeSkinLight = skinLightStore.subscribe(() => this.applySkinLight());
     void this.syncPhysicsEngine();
   }
 
@@ -197,6 +201,7 @@ export class MmdViewer {
     this.unsubscribeReset();
     this.unsubscribeMorphs();
     this.unsubscribeMaterialEdits();
+    this.unsubscribeSkinLight();
     this.clearModel();
     this.physicsRequest++;
     this.physics?.dispose();
@@ -359,6 +364,8 @@ export class MmdViewer {
         },
       };
     });
+    // Skin light settings are kept per model (Issue #29).
+    skinLightStore.load(model.name || model.pmxPath);
     const materials = this.materialsFor(this.options.displayPreset);
 
     // Bones: identity rest orientation, positions relative to parent.
@@ -596,11 +603,27 @@ export class MmdViewer {
       if (preset === 'real' && !this.detailMaps) {
         this.detailMaps = { cloth: createClothDetailMap(), hair: createHairDetailMap() };
       }
-      const shared = { detailMaps: this.detailMaps ?? undefined, mmdLightColor: this.mmdLightColor };
+      const shared = { detailMaps: this.detailMaps ?? undefined, mmdLightColor: this.mmdLightColor, skinLight: this.skinLight };
       mats = this.materialSources.map((src) => createPresetMaterial(preset, src, shared));
       this.presetMaterials.set(preset, mats);
+      this.applySkinLightSwitches(mats);
     }
     return mats;
+  }
+
+  /** Turns the skin light on for the materials that count as skin (Issue #29). */
+  private applySkinLightSwitches(mats: THREE.Material[]): void {
+    const s = skinLightStore.get();
+    mats.forEach((mat, i) => {
+      const on = skinLightSwitch(mat);
+      if (on) on.value = s.enabled && isSkinMaterial(i, this.materialSources[i]?.kind, s) ? 1 : 0;
+    });
+  }
+
+  /** Skin light settings changed: new color and switches on every built preset. */
+  private applySkinLight(): void {
+    for (const mats of this.presetMaterials.values()) this.applySkinLightSwitches(mats);
+    this.applyPresetLighting();
   }
 
   private applyPresetLighting(): void {
@@ -614,6 +637,7 @@ export class MmdViewer {
     this.dirLight.color.setRGB(scale.r, scale.g, scale.b, THREE.SRGBColorSpace);
     this.shadows.setDirection(lit.key.from.clone().multiplyScalar(20));
     this.mmdLightColor.value.set(mmdColor.r, mmdColor.g, mmdColor.b);
+    updateSkinLightUniforms(this.skinLight, new THREE.Color().setStyle(skinLightStore.get().color, THREE.NoColorSpace), mmdColor);
     this.extraLights.forEach((light, i) => {
       const extra = lit.extras[i];
       light.visible = !!extra;
