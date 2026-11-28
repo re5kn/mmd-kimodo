@@ -174,3 +174,9 @@ button.link { border: none; background: none; padding: 0 2px; color: var(--accen
 .material-list input[type='color'] { width: 26px; height: 20px; padding: 0; border: 1px solid var(--border); border-radius: 3px; background: none; }
 .material-list input[type='range'] { width: 64px; }
 .material-reset { padding: 0; width: 20px; height: 20px; font-size: 12px; line-height: 1; }
+
+.sway-chain { border: 1px solid var(--border); border-radius: 4px; padding: 4px 6px; display: flex; flex-direction: column; gap: 6px; }
+.sway-chain[open] { padding-bottom: 8px; }
+.sway-chain > summary { font-size: 12px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sway-chain .field input[type='search'] { font: inherit; padding: 3px 4px; }
+.sway-actions { display: flex; gap: 6px; }

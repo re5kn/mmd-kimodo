@@ -177,6 +177,16 @@ export class PoseSolver {
     }
   }
 
+  /**
+   * Recomputes bone `i`'s world matrix from its local transform and its
+   * parent's world matrix (and, with `recursive`, those of its descendants).
+   * For callers that change {@link localR} directly, like the sway chains.
+   */
+  refreshWorld(i: number, recursive = false): void {
+    if (recursive) this.updateWorldRecursive(i);
+    else this.updateWorld(i);
+  }
+
   /** Recomputes the world matrices from the root down to bone `i`. */
   private updateWorldPath(i: number): void {
     const path: number[] = [];

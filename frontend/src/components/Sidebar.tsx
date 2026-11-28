@@ -10,6 +10,7 @@ import { MaterialSection } from './MaterialSection';
 import { MorphSection } from './MorphSection';
 import { PhysicsSection } from './PhysicsSection';
 import { SkinLightSection } from './SkinLightSection';
+import { SwaySection } from './SwaySection';
 
 interface Props {
   model: ModelDto | null;
@@ -188,6 +189,7 @@ export function Sidebar(p: Props) {
       <SkinLightSection model={m} />
 
       <PhysicsSection model={m} options={p.options} onOptions={p.onOptions} />
+      <SwaySection model={m} physicsOn={p.options.enablePhysics} />
 
       <MorphSection model={m} />
 
