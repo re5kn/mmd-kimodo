@@ -33,6 +33,9 @@ export function parseSwayChain(raw: unknown): SwayChainSettings | null {
     drag: num(c.drag, 0, 1, d.drag),
     radius: num(c.radius, 0, 5, d.radius),
     collide: typeof c.collide === 'boolean' ? c.collide : d.collide,
+    linkGroup: typeof c.linkGroup === 'string' ? c.linkGroup.trim().slice(0, 40) : d.linkGroup,
+    linkStiffness: num(c.linkStiffness, 0, 1, d.linkStiffness),
+    linkLoop: typeof c.linkLoop === 'boolean' ? c.linkLoop : d.linkLoop,
   };
 }
 
@@ -76,6 +79,12 @@ export const swaySettingsStore = {
   },
   update(id: string, patch: Partial<Omit<SwayChainSettings, 'id'>>): void {
     swaySettingsStore.set(chains.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+  },
+  /** Changes every chain of a link group at once (group-wide settings such as linkStiffness). */
+  updateGroup(group: string, patch: Partial<Pick<SwayChainSettings, 'linkStiffness' | 'linkLoop'>>): void {
+    const g = group.trim();
+    if (!g) return;
+    swaySettingsStore.set(chains.map((c) => (c.linkGroup.trim() === g ? { ...c, ...patch } : c)));
   },
   remove(id: string): void {
     swaySettingsStore.set(chains.filter((c) => c.id !== id));

@@ -43,6 +43,16 @@ export interface SwayChainSettings {
   radius: number;
   /** Collide with the model's bone-following rigid bodies. */
   collide: boolean;
+  /**
+   * Chains with the same non-empty group are tied side by side (a skirt, a
+   * fringe): each tail point keeps its rest distance to the same point of the
+   * neighbouring chains. Neighbours = order around the group's centre.
+   */
+  linkGroup: string;
+  /** 0-1: how firmly neighbours keep their distance (the weaker chain of a pair counts). */
+  linkStiffness: number;
+  /** Also tie the last chain of the group to the first (a full skirt). */
+  linkLoop: boolean;
 }
 
 export const DEFAULT_SWAY_PARAMS = {
@@ -51,6 +61,9 @@ export const DEFAULT_SWAY_PARAMS = {
   drag: 0.2,
   radius: 0.2,
   collide: true,
+  linkGroup: '',
+  linkStiffness: 0.5,
+  linkLoop: true,
 } as const satisfies Partial<SwayChainSettings>;
 
 /** MMD's gravity in PMX units per s² (as in the rigid body engines). */
@@ -137,17 +150,38 @@ interface Chain {
   settings: SwayChainSettings;
   joints: Joint[];
   colliders: Collider[];
+  /** Tied to a neighbour (see SwayChainSettings.linkGroup). */
+  linked: boolean;
 }
+
+/** Distance kept between the k-th tails of two neighbouring chains. */
+interface Link {
+  a: Joint;
+  b: Joint;
+  /** Where a and b are in points(): [chain, point] (point 0 is the chain's root). */
+  at: [number, number, number, number];
+  rest: number;
+  stiffness: number;
+}
+
+/** Passes over the side links per sub-step. */
+const LINK_ITERATIONS = 2;
 
 export interface SwayChainInfo {
   id: string;
   bones: number[];
   /** Colliders the chain checks (bodies that hold the chain at rest are left out). */
   colliderCount: number;
+  /** Chain ids this one is tied to (its neighbours in its link group). */
+  neighbours: string[];
 }
 
 export class SwaySystem {
   private readonly chains: Chain[] = [];
+  private readonly links: Link[] = [];
+  private readonly neighbours = new Map<string, string[]>();
+  /** Tail positions before the side links moved them (per linked joint). */
+  private readonly beforeLinks = new Map<Joint, Vector3>();
   private readonly colliderWorld: Matrix4[];
   private readonly colliderInverse: Matrix4[];
   private readonly colliders: Collider[];
@@ -175,8 +209,9 @@ export class SwaySystem {
       if (!path) continue;
       const joints = this.buildJoints(path);
       if (joints.length === 0) continue;
-      this.chains.push({ settings: s, joints, colliders: s.collide ? this.collidersFor(joints, s.radius) : [] });
+      this.chains.push({ settings: s, joints, colliders: s.collide ? this.collidersFor(joints, s.radius) : [], linked: false });
     }
+    this.buildLinks();
   }
 
   get active(): boolean {
@@ -189,12 +224,22 @@ export class SwaySystem {
   }
 
   info(): SwayChainInfo[] {
-    return this.chains.map((c) => ({ id: c.settings.id, bones: c.joints.map((j) => j.bone), colliderCount: c.colliders.length }));
+    return this.chains.map((c) => ({
+      id: c.settings.id,
+      bones: c.joints.map((j) => j.bone),
+      colliderCount: c.colliders.length,
+      neighbours: this.neighbours.get(c.settings.id) ?? [],
+    }));
   }
 
   /** Current tail points, for the debug view: per chain, head of the first bone then every tail. */
   points(solver: PoseSolver): Vector3[][] {
     return this.chains.map((c) => [solver.worldPosition(c.joints[0].bone), ...c.joints.map((j) => j.tail.clone())]);
+  }
+
+  /** Side links as [chain, point, chain, point] indices into {@link points}, for the debug view. */
+  linkSegments(): [number, number, number, number][] {
+    return this.links.map((l) => l.at);
   }
 
   /** Puts every tail where the animation has it, at rest. Bones keep their animated rotation. */
@@ -223,10 +268,91 @@ export class SwaySystem {
     const n = Math.min(MAX_SUBSTEPS, Math.max(1, Math.ceil(dt / MAX_SUBSTEP)));
     const h = dt / n;
     this.updateColliders(solver.world);
+    for (const chain of this.chains) for (const j of chain.joints) j.animR.copy(solver.localR[j.bone]);
+    for (let k = 0; k < n; k++) {
+      for (const chain of this.chains) this.stepChain(chain, solver, h);
+      if (this.links.length > 0) this.applyLinks(solver, h);
+    }
+    for (const chain of this.chains) this.pose(chain, solver);
+  }
+
+  /**
+   * Groups chains by linkGroup, orders each group around its centre (seen
+   * from above, by the rest position of each chain's root) and ties
+   * neighbours tail by tail, as deep as the shorter chain goes.
+   */
+  private buildLinks(): void {
+    const groups = new Map<string, Chain[]>();
+    for (const c of this.chains) {
+      const g = c.settings.linkGroup.trim();
+      if (!g) continue;
+      groups.set(g, [...(groups.get(g) ?? []), c]);
+    }
+    const restTail = (j: Joint) => new Vector3(...this.bones[j.bone].position).add(j.tailLocal);
+    for (const members of groups.values()) {
+      if (members.length < 2) continue;
+      const root = (c: Chain) => new Vector3(...this.bones[c.joints[0].bone].position);
+      const centre = members.reduce((sum, c) => sum.add(root(c)), new Vector3()).divideScalar(members.length);
+      const angle = (c: Chain) => {
+        const p = root(c);
+        return Math.atan2(p.z - centre.z, p.x - centre.x);
+      };
+      const ordered = members.slice().sort((a, b) => angle(a) - angle(b));
+      const pairs: [Chain, Chain][] = [];
+      for (let i = 0; i + 1 < ordered.length; i++) pairs.push([ordered[i], ordered[i + 1]]);
+      // A loop needs three chains; with two the closing pair would repeat the first.
+      if (ordered.length >= 3 && ordered.every((c) => c.settings.linkLoop)) pairs.push([ordered[ordered.length - 1], ordered[0]]);
+      for (const [a, b] of pairs) {
+        const stiffness = Math.min(clamp01(a.settings.linkStiffness), clamp01(b.settings.linkStiffness));
+        if (stiffness <= 0) continue;
+        const depth = Math.min(a.joints.length, b.joints.length);
+        for (let k = 0; k < depth; k++) {
+          const ja = a.joints[k], jb = b.joints[k];
+          const at: [number, number, number, number] = [this.chains.indexOf(a), k + 1, this.chains.indexOf(b), k + 1];
+          this.links.push({ a: ja, b: jb, at, rest: restTail(ja).distanceTo(restTail(jb)), stiffness });
+        }
+        a.linked = b.linked = true;
+        for (const [x, y] of [[a, b], [b, a]]) {
+          const list = this.neighbours.get(x.settings.id) ?? [];
+          if (!list.includes(y.settings.id)) list.push(y.settings.id);
+          this.neighbours.set(x.settings.id, list);
+        }
+      }
+    }
+    for (const c of this.chains) if (c.linked) for (const j of c.joints) this.beforeLinks.set(j, new Vector3());
+  }
+
+  /**
+   * Moves tied tails towards their rest distance (position based, both sides
+   * half each), then puts every linked chain back on its bone lengths and out
+   * of the colliders, root to tip. The total move is added to the velocities.
+   */
+  private applyLinks(solver: PoseSolver, h: number): void {
+    for (const [j, before] of this.beforeLinks) before.copy(j.tail);
+    for (let it = 0; it < LINK_ITERATIONS; it++) {
+      for (const l of this.links) {
+        _d.subVectors(l.b.tail, l.a.tail);
+        const len = _d.length();
+        if (len < 1e-8) continue;
+        const move = ((len - l.rest) / len) * l.stiffness * 0.5;
+        l.a.tail.addScaledVector(_d, move);
+        l.b.tail.addScaledVector(_d, -move);
+      }
+    }
     for (const chain of this.chains) {
-      for (const j of chain.joints) j.animR.copy(solver.localR[j.bone]);
-      for (let k = 0; k < n; k++) this.stepChain(chain, solver, h);
-      this.pose(chain, solver);
+      if (!chain.linked) continue;
+      for (const j of chain.joints) {
+        solver.localR[j.bone].copy(j.animR);
+        solver.refreshWorld(j.bone);
+        const world = solver.world[j.bone];
+        _head.setFromMatrixPosition(world);
+        _target.copy(j.tailLocal).applyMatrix4(world);
+        this.keepLength(j.tail, _head, j.length, _target);
+        for (const c of chain.colliders) this.collide(c, j.tail, chain.settings.radius);
+        this.keepLength(j.tail, _head, j.length, _target);
+        j.velocity.addScaledVector(_d.subVectors(j.tail, this.beforeLinks.get(j)!), 1 / h);
+        this.aim(j, solver, _target);
+      }
     }
   }
 

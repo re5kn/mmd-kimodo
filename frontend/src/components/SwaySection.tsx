@@ -47,7 +47,7 @@ export function SwaySection({ model, physicsOn }: Props) {
       </p>
       {!physicsOn && chains.length > 0 && <p className="physics-note">物理演算がオフの間は揺れません</p>}
       {chains.map((c) => (
-        <ChainEditor key={c.id} chain={c} model={model} simulated={simulated} />
+        <ChainEditor key={c.id} chain={c} chains={chains} model={model} simulated={simulated} />
       ))}
       <button onClick={add}>揺れ物を追加</button>
     </section>
@@ -57,7 +57,14 @@ export function SwaySection({ model, physicsOn }: Props) {
 const boneLabel = (bones: readonly BoneDto[], i: number, simulated: ReadonlySet<number>) =>
   `${bones[i].name || `ボーン ${i}`}${simulated.has(i) ? '（剛体）' : ''}`;
 
-function ChainEditor({ chain, model, simulated }: { chain: SwayChainSettings; model: ModelDto; simulated: ReadonlySet<number> }) {
+interface EditorProps {
+  chain: SwayChainSettings;
+  chains: readonly SwayChainSettings[];
+  model: ModelDto;
+  simulated: ReadonlySet<number>;
+}
+
+function ChainEditor({ chain, chains, model, simulated }: EditorProps) {
   const [filter, setFilter] = useState('');
   const bones = model.bones;
   const set = (patch: Partial<Omit<SwayChainSettings, 'id'>>) => swaySettingsStore.update(chain.id, patch);
@@ -142,6 +149,7 @@ function ChainEditor({ chain, model, simulated }: { chain: SwayChainSettings; mo
       <label className="check">
         <input type="checkbox" checked={chain.collide} onChange={(e) => set({ collide: e.target.checked })} /> 体の剛体に当たる
       </label>
+      <LinkFields chain={chain} chains={chains} />
       <div className="sway-actions">
         <button
           onClick={() => set({ stiffness: DEFAULT_SWAY_PARAMS.stiffness, gravity: DEFAULT_SWAY_PARAMS.gravity, drag: DEFAULT_SWAY_PARAMS.drag, radius: DEFAULT_SWAY_PARAMS.radius })}
@@ -151,5 +159,56 @@ function ChainEditor({ chain, model, simulated }: { chain: SwayChainSettings; mo
         <button onClick={() => swaySettingsStore.remove(chain.id)}>削除</button>
       </div>
     </details>
+  );
+}
+
+/**
+ * Side links (スカートなど): chains with the same group name are tied to their
+ * neighbours around the group. Stiffness and loop apply to the whole group.
+ */
+function LinkFields({ chain, chains }: { chain: SwayChainSettings; chains: readonly SwayChainSettings[] }) {
+  const group = chain.linkGroup.trim();
+  const groups = [...new Set(chains.map((c) => c.linkGroup.trim()).filter((g) => g))];
+  const members = group ? chains.filter((c) => c.linkGroup.trim() === group && c.enabled).length : 0;
+  const listId = `sway-groups-${chain.id}`;
+  return (
+    <>
+      <label className="field" title="同じ名前のグループの鎖どうしを、横に並んだ隣の鎖とつなぎます（スカートなど）。空欄ならつなぎません">
+        横につなぐグループ
+        <input
+          type="text"
+          list={listId}
+          placeholder="例: スカート（空欄 = つながない）"
+          value={chain.linkGroup}
+          onChange={(e) => swaySettingsStore.update(chain.id, { linkGroup: e.target.value })}
+        />
+        <datalist id={listId}>
+          {groups.map((g) => (
+            <option key={g} value={g} />
+          ))}
+        </datalist>
+      </label>
+      {group && (
+        <>
+          <p className="hint">
+            グループ「{group}」: {members} 本{members < 2 ? '（2 本以上でつながります）' : '。上から見て根元の並び順に隣どうしをつなぎます'}
+          </p>
+          <label className="field" title="隣の鎖との間隔を保つ強さ。グループ全体に効きます">
+            横の硬さ（{chain.linkStiffness.toFixed(2)}、グループ共通）
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={chain.linkStiffness}
+              onChange={(e) => swaySettingsStore.updateGroup(group, { linkStiffness: Number(e.target.value) })}
+            />
+          </label>
+          <label className="check" title="最後の鎖と最初の鎖もつないで輪にします（ぐるりと一周するスカート）。3 本以上で効きます">
+            <input type="checkbox" checked={chain.linkLoop} onChange={(e) => swaySettingsStore.updateGroup(group, { linkLoop: e.target.checked })} /> 輪にする（グループ共通）
+          </label>
+        </>
+      )}
+    </>
   );
 }

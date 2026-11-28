@@ -4,7 +4,7 @@ import type { SwaySystem } from '../physics/sway';
 
 const COLOR = 0x3b82f6;
 
-/** Debug view of the sway chains (Issue #31): a line through each chain's tail points. */
+/** Debug view of the sway chains (Issue #31): a line through each chain's tail points, plus the side links. */
 export class SwayHelper extends THREE.Group {
   private readonly lines: THREE.LineSegments;
   private readonly dots: THREE.Points;
@@ -18,11 +18,15 @@ export class SwayHelper extends THREE.Group {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
     const index: number[] = [];
+    const starts: number[] = [];
     let base = 0;
     for (const c of sway.info()) {
+      starts.push(base);
       for (let k = 0; k < c.bones.length; k++) index.push(base + k, base + k + 1);
       base += c.bones.length + 1;
     }
+    // Side links between neighbouring chains.
+    for (const [ca, pa, cb, pb] of sway.linkSegments()) index.push(starts[ca] + pa, starts[cb] + pb);
     geometry.setIndex(index);
     const common = { color: COLOR, depthTest: false, transparent: true };
     this.lines = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial(common));
