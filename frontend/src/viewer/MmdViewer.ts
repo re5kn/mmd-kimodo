@@ -13,7 +13,11 @@ import { sampleBoneTrack, sampleIkEnabled, sampleMorphTrack, type BoundMotion } 
 import { createPhysicsEngine, type PhysicsEngine, type PhysicsEngineKind, type PhysicsQuality } from '../physics';
 import { PhysicsRig } from '../physics/rig';
 import { StillnessDetector } from '../physics/stillness';
+import { SwaySystem } from '../physics/sway';
+import { removeReplacedBodies } from '../physics/replace';
 import { RigidBodyHelper } from './RigidBodyHelper';
+import { SwayHelper } from './SwayHelper';
+import { swaySettingsStore } from './swaySettings';
 import { applyMaterialMorphState } from './materialMorphApply';
 import { combineMaterialStates, materialEditStore } from './materialEdits';
 import { physicsStatusStore } from './physicsStatus';
@@ -138,11 +142,16 @@ export class MmdViewer {
   private stillness: StillnessDetector | null = null;
   private publishedFrozen = false;
   private rigidBodyHelper: RigidBodyHelper | null = null;
+  /** Sway chains added on top of / instead of the PMX bodies (Issue #31). */
+  private sway: SwaySystem | null = null;
+  private swayHelper: SwayHelper | null = null;
+  private loadingModel = false;
   private lastTick = 0;
   private readonly unsubscribeReset: () => void;
   private readonly unsubscribeMorphs: () => void;
   private readonly unsubscribeMaterialEdits: () => void;
   private readonly unsubscribeSkinLight: () => void;
+  private readonly unsubscribeSway: () => void;
 
   options: ViewerOptions = { ...DEFAULT_VIEWER_OPTIONS };
 
@@ -192,6 +201,9 @@ export class MmdViewer {
     this.unsubscribeMorphs = morphControlStore.subscribe(() => this.applyFrame());
     this.unsubscribeMaterialEdits = materialEditStore.subscribe(() => this.applyMaterialMorphs());
     this.unsubscribeSkinLight = skinLightStore.subscribe(() => this.applySkinLight());
+    this.unsubscribeSway = swaySettingsStore.subscribe(() => {
+      if (!this.loadingModel) this.buildPhysicsRig();
+    });
     void this.syncPhysicsEngine();
   }
 
@@ -202,6 +214,7 @@ export class MmdViewer {
     this.unsubscribeMorphs();
     this.unsubscribeMaterialEdits();
     this.unsubscribeSkinLight();
+    this.unsubscribeSway();
     this.clearModel();
     this.physicsRequest++;
     this.physics?.dispose();
@@ -245,6 +258,7 @@ export class MmdViewer {
     this.shadows.setEnabled(o.showShadows);
     if (this.skeletonHelper) this.skeletonHelper.visible = o.showBones;
     if (this.rigidBodyHelper) this.rigidBodyHelper.visible = o.showRigidBodies;
+    if (this.swayHelper) this.swayHelper.visible = o.showRigidBodies;
     if ((o.lighting !== prev.lighting || o.effects !== prev.effects) && o.displayPreset === prev.displayPreset) this.applyPresetLighting();
     if (o.displayPreset !== prev.displayPreset) {
       this.applyPresetLighting();
@@ -252,6 +266,8 @@ export class MmdViewer {
       this.applyMaterialMorphs();
     }
     if (o.enablePhysics !== prev.enablePhysics || o.physicsEngine !== prev.physicsEngine) {
+      // Sway chains restart too (they may run before the engine has loaded).
+      this.physicsNeedsReset = true;
       void this.syncPhysicsEngine();
     } else if (o.physicsQuality !== prev.physicsQuality) {
       // Takes effect from the next step; the swing continues.
@@ -405,16 +421,16 @@ export class MmdViewer {
     this.materialMorphs = new MaterialMorphEvaluator(model);
     this.materialMorphStates = null;
 
-    const physicsModel = { bones: model.bones, rigidBodies: model.rigidBodies ?? [], joints: model.joints ?? [] };
-    this.rig = new PhysicsRig(physicsModel);
-    this.stillness = StillnessDetector.forRig(this.rig);
     this.physicsTarget = model.bones.map(() => new THREE.Matrix4());
-    this.rigidBodyHelper = new RigidBodyHelper(physicsModel.rigidBodies);
-    this.rigidBodyHelper.visible = this.options.showRigidBodies;
-    this.scene.add(this.rigidBodyHelper);
-    this.setupPhysicsModel();
+    // Sway chains are kept per model (Issue #31).
+    this.loadingModel = true;
+    try {
+      swaySettingsStore.load(model.name || model.pmxPath);
+    } finally {
+      this.loadingModel = false;
+    }
+    this.buildPhysicsRig();
 
-    this.applyFrame();
     this.resetCamera();
     return { missingTextures };
   }
@@ -434,7 +450,7 @@ export class MmdViewer {
     if (frame < this.frame || frame - this.frame > PHYSICS_RESET_FRAME_JUMP) this.physicsNeedsReset = true;
     this.frame = frame;
     // While physics runs, the render loop evaluates the pose every tick.
-    if (!this.physicsActive()) this.applyFrame();
+    if (!this.simulating()) this.applyFrame();
   }
 
   /** Restarts the simulation from the current pose. */
@@ -444,7 +460,57 @@ export class MmdViewer {
   }
 
   private physicsActive(): boolean {
-    return !!this.physics && !!this.model && this.model.rigidBodies?.length > 0;
+    return !!this.physics && !!this.model && !!this.rig && this.rig.bodyCount > 0;
+  }
+
+  /** Sway chains run with physics switched on, whether or not the PMX engine is ready. */
+  private swayActive(): boolean {
+    return this.options.enablePhysics && !!this.sway?.active;
+  }
+
+  /** Whether the pose depends on time (evaluated every tick). */
+  private simulating(): boolean {
+    return this.physicsActive() || this.swayActive();
+  }
+
+  /**
+   * Builds the sway chains and the rigid body setup for the current model:
+   * PMX bodies replaced by chains are left out of the engine (Issue #31).
+   */
+  private buildPhysicsRig(): void {
+    const { model } = this;
+    if (!model) return;
+    const full = { bones: model.bones, rigidBodies: model.rigidBodies ?? [], joints: model.joints ?? [] };
+    const chains = swaySettingsStore.get();
+    this.sway = new SwaySystem(model.bones, full.rigidBodies, chains);
+    const replaced = new Set<string>(chains.filter((c) => c.blend === 'replace').map((c) => c.id));
+    const replacedBones = new Set(this.sway.info().filter((c) => replaced.has(c.id)).flatMap((c) => c.bones));
+    const physicsModel = removeReplacedBodies(full, replacedBones).model;
+    this.rig = new PhysicsRig(physicsModel);
+    this.stillness = StillnessDetector.forRig(this.rig);
+
+    this.disposeHelpers();
+    this.rigidBodyHelper = new RigidBodyHelper(physicsModel.rigidBodies);
+    this.rigidBodyHelper.visible = this.options.showRigidBodies;
+    this.scene.add(this.rigidBodyHelper);
+    if (this.sway.active) {
+      this.swayHelper = new SwayHelper(this.sway);
+      this.swayHelper.visible = this.options.showRigidBodies;
+      this.scene.add(this.swayHelper);
+    }
+    this.setupPhysicsModel();
+    this.physicsNeedsReset = true;
+    this.applyFrame();
+  }
+
+  private disposeHelpers(): void {
+    for (const h of [this.rigidBodyHelper, this.swayHelper]) {
+      if (!h) continue;
+      this.scene.remove(h);
+      h.dispose();
+    }
+    this.rigidBodyHelper = null;
+    this.swayHelper = null;
   }
 
   /** Creates, swaps or drops the physics engine to match the options. */
@@ -536,6 +602,7 @@ export class MmdViewer {
       if (i < this.morphWeights.length) this.morphWeights[i] = w;
     }
     const physics = this.physicsActive() ? this.physics! : null;
+    const resetSway = this.physicsNeedsReset;
     if (!physics) {
       solver.solve(this.options.enableIk);
     } else {
@@ -556,6 +623,13 @@ export class MmdViewer {
       this.syncFrozenStatus();
       solver.applyPhysics(physics.boneModes, this.physicsTarget);
       solver.solve(this.options.enableIk, 'afterPhysics');
+    }
+    if (this.sway && this.swayActive()) {
+      // Chains swing on the final pose, PMX physics included ('with').
+      if (resetSway) this.sway.reset(solver);
+      else this.sway.update(solver, dt);
+      this.physicsNeedsReset = false;
+      if (this.swayHelper?.visible) this.swayHelper.update(solver);
     }
     if (this.rigidBodyHelper?.visible && this.rig) {
       if (physics) this.rigidBodyHelper.updateFromEngine(physics);
@@ -694,11 +768,8 @@ export class MmdViewer {
       this.scene.remove(this.skeletonHelper);
       this.skeletonHelper.dispose();
     }
-    if (this.rigidBodyHelper) {
-      this.scene.remove(this.rigidBodyHelper);
-      this.rigidBodyHelper.dispose();
-    }
-    this.rigidBodyHelper = null;
+    this.disposeHelpers();
+    this.sway = null;
     this.rig = null;
     this.stillness = null;
     this.mesh = null;
@@ -741,7 +812,7 @@ export class MmdViewer {
     const now = performance.now();
     const dt = this.lastTick > 0 ? Math.min((now - this.lastTick) / 1000, 0.1) : 0;
     this.lastTick = now;
-    if (this.physicsActive()) this.applyFrame(dt);
+    if (this.simulating()) this.applyFrame(dt);
     if (!this.needsRender) return;
     this.needsRender = false;
     if (this.options.showShadows) this.fitShadows();
