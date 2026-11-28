@@ -159,6 +159,11 @@ button.link { border: none; background: none; padding: 0 2px; color: var(--accen
   border-top: 1px solid var(--border, #ddd); padding-top: 6px; margin-top: 4px;
 }
 
+/* Skin light: materials treated as skin. */
+.skin-material-list > summary { font-size: 12px; cursor: pointer; color: var(--muted); }
+.skin-material-list ul { list-style: none; margin: 6px 0; padding: 0; max-height: 220px; overflow-y: auto; font-size: 12px; }
+.skin-material-list li .check span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* Material panel: one row per material (show, color, opacity, reset). */
 .material-list > summary { font-size: 12px; cursor: pointer; color: var(--muted); }
 .material-list ul { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
