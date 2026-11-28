@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createSkinLightUniforms, type SkinLightUniforms } from './skinLight';
 
 /**
  * MMD's own shading (Issue #11 A1), as in MMD's default effect:
@@ -55,6 +56,9 @@ uniform vec3 mmdAmbient;
 uniform vec3 mmdSpecular;
 uniform float mmdShininess;
 uniform vec3 mmdLightColor;
+// Skin light (Issue #29): skin materials use skinLightColor instead.
+uniform vec3 skinLightColor;
+uniform float skinLightOn;
 // Material morph factors (image × mul + add, sRGB).
 uniform vec4 mmdTexMul;
 uniform vec4 mmdTexAdd;
@@ -76,7 +80,8 @@ const FRAGMENT_MAIN = /* glsl */ `
     mmdLightDir = directionalLights[ 0 ].direction;
   #endif
   // diffuseColor.rgb holds the (linear) texture color; MMD works in sRGB.
-  vec3 mmdColor = clamp( mmdDiffuse * mmdLightColor + mmdAmbient, 0.0, 1.0 );
+  vec3 mmdLight = mix( mmdLightColor, skinLightColor, skinLightOn );
+  vec3 mmdColor = clamp( mmdDiffuse * mmdLight + mmdAmbient, 0.0, 1.0 );
   mmdColor *= sRGBTransferOETF( vec4( diffuseColor.rgb, 1.0 ) ).rgb * mmdTexMul.rgb + mmdTexAdd.rgb;
   diffuseColor.a = diffuseColor.a * mmdTexMul.a + opacity * mmdTexAdd.a;
   #if MMD_SPHERE_MODE > 0
@@ -97,7 +102,7 @@ const FRAGMENT_MAIN = /* glsl */ `
   float mmdNL = dot( normal, mmdLightDir );
   vec3 mmdHalf = normalize( mmdLightDir + geometryViewDir );
   float mmdNH = max( dot( normal, mmdHalf ), 1e-6 );
-  vec3 mmdSpec = pow( mmdNH, max( mmdShininess, 1e-4 ) ) * mmdSpecular * mmdLightColor;
+  vec3 mmdSpec = pow( mmdNH, max( mmdShininess, 1e-4 ) ) * mmdSpecular * mmdLight;
   #if defined( USE_SHADOWMAP ) && NUM_DIR_LIGHT_SHADOWS > 0
     // Self shadow, as in MMD: lit = min(sat(3 N·L), shadow map); the shadowed
     // color is the toon's darkest (bottom) color, without specular.
@@ -131,6 +136,7 @@ export function createMmdMaterial(
   src: MmdShadingSource,
   params: THREE.MeshToonMaterialParameters,
   lightColor: MmdLightUniform = createMmdLightUniform(),
+  skinLight: SkinLightUniforms = createSkinLightUniforms(),
 ): THREE.MeshToonMaterial {
   const sphereMode = src.sphere ? src.sphere.mode : SphereMode.None;
   const mat = new THREE.MeshToonMaterial({
@@ -147,6 +153,8 @@ export function createMmdMaterial(
     mmdSpecular: { value: new THREE.Vector3(...src.specular) },
     mmdShininess: { value: src.specularity },
     mmdLightColor: lightColor,
+    skinLightColor: skinLight.skinLightColor,
+    skinLightOn: { value: 0 },
     mmdSphere: { value: src.sphere?.map ?? null },
     mmdTexMul: { value: new THREE.Vector4(1, 1, 1, 1) },
     mmdTexAdd: { value: new THREE.Vector4(0, 0, 0, 0) },
@@ -156,6 +164,7 @@ export function createMmdMaterial(
     mmdToonAdd: { value: new THREE.Vector4(0, 0, 0, 0) },
   };
   mat.userData.mmdUniforms = uniforms;
+  mat.userData.skinLightOn = uniforms.skinLightOn;
   mat.onBeforeCompile = (shader) => {
     if (!shader.fragmentShader.includes(MMD_FINAL_COLOR_LINE)) {
       console.warn('mmd shading: three.js toon shader changed; using plain toon shading');

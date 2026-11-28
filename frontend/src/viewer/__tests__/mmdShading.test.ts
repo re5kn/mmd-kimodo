@@ -35,7 +35,8 @@ describe('MMD shading', () => {
     expect(mat.opacity).toBe(0.5);
     const shader = compile(mat);
     expect(shader.fragmentShader).not.toContain(MMD_FINAL_COLOR_LINE);
-    expect(shader.fragmentShader).toContain('mmdDiffuse * mmdLightColor + mmdAmbient');
+    expect(shader.fragmentShader).toContain('mix( mmdLightColor, skinLightColor, skinLightOn )');
+    expect(shader.fragmentShader).toContain('mmdDiffuse * mmdLight + mmdAmbient');
     const u = shader.uniforms as Record<string, THREE.IUniform>;
     expect(u.mmdDiffuse.value.toArray()).toEqual([0.8, 0.6, 0.4]);
     expect(u.mmdAmbient.value.toArray()).toEqual([0.4, 0.3, 0.2]);

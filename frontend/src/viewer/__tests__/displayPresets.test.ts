@@ -13,6 +13,7 @@ import {
   specularityToRoughness,
   type PresetMaterialSource,
 } from '../displayPresets';
+import { createSkinLightUniforms, skinLightSwitch } from '../skinLight';
 
 const source = (map: THREE.Texture | null = null): PresetMaterialSource => ({
   name: 'body',
@@ -176,5 +177,23 @@ describe('real preset grading', () => {
   test('other presets are not graded', () => {
     const shader = compile(createPresetMaterial('pbr', source(), shared));
     expect(shader.fragmentShader).not.toContain('gradeC');
+  });
+});
+
+describe('skin light switch (Issue #29)', () => {
+  test('every lit preset gets a switch sharing the viewer uniforms; flat and real decals have none', () => {
+    const skinLight = createSkinLightUniforms();
+    for (const { kind } of DISPLAY_PRESETS) {
+      const mat = createPresetMaterial(kind, { ...source(), kind: 'skin' }, { skinLight });
+      const on = skinLightSwitch(mat);
+      if (kind === 'flat') {
+        expect(on).toBeUndefined();
+        continue;
+      }
+      expect(on?.value).toBe(0);
+      if (kind === 'mmd') expect(mat.userData.mmdUniforms.skinLightColor).toBe(skinLight.skinLightColor);
+    }
+    const decal = createPresetMaterial('real', { ...source(), kind: 'decal' }, { skinLight });
+    expect(skinLightSwitch(decal)).toBeUndefined();
   });
 });
