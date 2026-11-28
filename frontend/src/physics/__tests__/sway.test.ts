@@ -173,6 +173,10 @@ describe('side links', () => {
     // Around the centre: (0,-1) → (1,0) → (0,1) → (-1,0) → back.
     expect(loop.find((c) => c.id === 's0')!.neighbours.sort()).toEqual(['s2', 's3']);
     expect(loop.every((c) => c.neighbours.length === 2)).toBe(true);
+    // 4 pairs x 3 tails each, as [chain, point, chain, point] for the debug view.
+    const sys = new SwaySystem(b, [], all);
+    expect(sys.linkSegments()).toHaveLength(12);
+    expect(sys.linkSegments().every(([ca, pa, cb, pb]) => ca !== cb && pa === pb && pa >= 1 && pa <= 3)).toBe(true);
     const open = new SwaySystem(b, [], all.map((c) => ({ ...c, linkLoop: false }))).info();
     expect(open.map((c) => c.neighbours.length).sort()).toEqual([1, 1, 2, 2]);
     // Other groups and ungrouped chains stay apart.

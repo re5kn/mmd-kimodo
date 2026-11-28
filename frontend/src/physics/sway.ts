@@ -158,6 +158,8 @@ interface Chain {
 interface Link {
   a: Joint;
   b: Joint;
+  /** Where a and b are in points(): [chain, point] (point 0 is the chain's root). */
+  at: [number, number, number, number];
   rest: number;
   stiffness: number;
 }
@@ -235,6 +237,11 @@ export class SwaySystem {
     return this.chains.map((c) => [solver.worldPosition(c.joints[0].bone), ...c.joints.map((j) => j.tail.clone())]);
   }
 
+  /** Side links as [chain, point, chain, point] indices into {@link points}, for the debug view. */
+  linkSegments(): [number, number, number, number][] {
+    return this.links.map((l) => l.at);
+  }
+
   /** Puts every tail where the animation has it, at rest. Bones keep their animated rotation. */
   reset(solver: PoseSolver): void {
     for (const chain of this.chains) {
@@ -301,7 +308,8 @@ export class SwaySystem {
         const depth = Math.min(a.joints.length, b.joints.length);
         for (let k = 0; k < depth; k++) {
           const ja = a.joints[k], jb = b.joints[k];
-          this.links.push({ a: ja, b: jb, rest: restTail(ja).distanceTo(restTail(jb)), stiffness });
+          const at: [number, number, number, number] = [this.chains.indexOf(a), k + 1, this.chains.indexOf(b), k + 1];
+          this.links.push({ a: ja, b: jb, at, rest: restTail(ja).distanceTo(restTail(jb)), stiffness });
         }
         a.linked = b.linked = true;
         for (const [x, y] of [[a, b], [b, a]]) {
