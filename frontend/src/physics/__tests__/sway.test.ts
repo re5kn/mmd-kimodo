@@ -151,3 +151,53 @@ describe('shapes', () => {
     expect(end.y).toBeCloseTo(1.6, 6);
   });
 });
+
+describe('side links', () => {
+  // A root with strands hanging down (0, -1 per bone), like a skirt seen from above.
+  function skirt(roots: [number, number][]) {
+    const list = [bone('waist', [0, 10, 0], -1), bone('pusher', [-2, 8, 0], -1)];
+    roots.forEach(([x, z], i) => {
+      const base = list.length;
+      list.push(bone(`s${i}_1`, [x, 10, z], 0), bone(`s${i}_2`, [x, 9, z], base), bone(`s${i}_3`, [x, 8, z], base + 1));
+    });
+    return list;
+  }
+  const strand = (i: number, extra: Partial<SwayChainSettings> = {}): SwayChainSettings => ({
+    id: `s${i}`, enabled: true, startBone: `s${i}_1`, endBone: `s${i}_3`, blend: 'with', ...DEFAULT_SWAY_PARAMS, ...extra,
+  });
+
+  test('neighbours follow the order around the group, closed into a loop', () => {
+    const b = skirt([[1, 0], [-1, 0], [0, 1], [0, -1]]);
+    const all = [0, 1, 2, 3].map((i) => strand(i, { linkGroup: 'skirt' }));
+    const loop = new SwaySystem(b, [], all).info();
+    // Around the centre: (0,-1) → (1,0) → (0,1) → (-1,0) → back.
+    expect(loop.find((c) => c.id === 's0')!.neighbours.sort()).toEqual(['s2', 's3']);
+    expect(loop.every((c) => c.neighbours.length === 2)).toBe(true);
+    const open = new SwaySystem(b, [], all.map((c) => ({ ...c, linkLoop: false }))).info();
+    expect(open.map((c) => c.neighbours.length).sort()).toEqual([1, 1, 2, 2]);
+    // Other groups and ungrouped chains stay apart.
+    const split = new SwaySystem(b, [], [strand(0, { linkGroup: 'a' }), strand(1, { linkGroup: 'b' }), strand(2)]).info();
+    expect(split.every((c) => c.neighbours.length === 0)).toBe(true);
+  });
+
+  test('a pushed strand drags its neighbour along and keeps the gap', () => {
+    const b = skirt([[0, 0], [1, 0]]);
+    // A ball that follows the pusher bone; it comes in from the left into strand 0.
+    const ball = body('ball', 1, [-2, 8, 0], 0, { size: [0.5, 0, 0] });
+    const run2 = (linkGroup: string) => {
+      const solver = new PoseSolver(b);
+      solver.solve();
+      const sys = new SwaySystem(b, [ball], [0, 1].map((i) => strand(i, { linkGroup, linkStiffness: 1, gravity: 0.5, radius: 0.1 })));
+      sys.reset(solver);
+      run(sys, solver, 2, (t) => solver.motionT[1].set(Math.min(t, 1) * 1.8, 0, 0));
+      return { a: solver.worldPosition(4), b: solver.worldPosition(7) };
+    };
+    const free = run2('');
+    const tied = run2('skirt');
+    // Strand 0 is pushed towards strand 1 either way...
+    expect(free.a.x).toBeGreaterThan(0.2);
+    // ...but only the tied strand 1 moves away, so the gap stays nearer its rest width (1).
+    expect(tied.b.x - free.b.x).toBeGreaterThan(0.1);
+    expect(Math.abs(tied.b.x - tied.a.x - 1)).toBeLessThan(Math.abs(free.b.x - free.a.x - 1));
+  });
+});

@@ -33,6 +33,9 @@ export function parseSwayChain(raw: unknown): SwayChainSettings | null {
     drag: num(c.drag, 0, 1, d.drag),
     radius: num(c.radius, 0, 5, d.radius),
     collide: typeof c.collide === 'boolean' ? c.collide : d.collide,
+    linkGroup: typeof c.linkGroup === 'string' ? c.linkGroup.trim().slice(0, 40) : d.linkGroup,
+    linkStiffness: num(c.linkStiffness, 0, 1, d.linkStiffness),
+    linkLoop: typeof c.linkLoop === 'boolean' ? c.linkLoop : d.linkLoop,
   };
 }
 
